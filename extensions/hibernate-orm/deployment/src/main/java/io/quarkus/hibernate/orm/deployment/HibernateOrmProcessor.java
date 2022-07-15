@@ -178,7 +178,7 @@ public final class HibernateOrmProcessor {
         producer.produce(new DatabaseKindDialectBuildItem(DatabaseKind.DERBY,
                 "org.hibernate.dialect.DerbyTenSevenDialect"));
         producer.produce(new DatabaseKindDialectBuildItem(DatabaseKind.H2,
-                "org.hibernate.dialect.H2Dialect")); //FIXME use a custom one like we did in the past? io.quarkus.hibernate.orm.runtime.dialect.QuarkusH2Dialect"));
+                "io.quarkus.hibernate.orm.runtime.dialect.QuarkusH2Dialect"));
         producer.produce(new DatabaseKindDialectBuildItem(DatabaseKind.MARIADB,
                 "org.hibernate.dialect.MariaDB106Dialect"));
         producer.produce(new DatabaseKindDialectBuildItem(DatabaseKind.MSSQL,
