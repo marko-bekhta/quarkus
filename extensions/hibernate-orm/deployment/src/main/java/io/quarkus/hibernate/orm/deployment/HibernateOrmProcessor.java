@@ -188,7 +188,7 @@ public final class HibernateOrmProcessor {
         producer.produce(new DatabaseKindDialectBuildItem(DatabaseKind.ORACLE,
                 "org.hibernate.dialect.Oracle12cDialect"));
         producer.produce(new DatabaseKindDialectBuildItem(DatabaseKind.POSTGRESQL,
-                "org.hibernate.dialect.PostgreSQLDialect")); //FIXME use a custom one like we did in the past? "io.quarkus.hibernate.orm.runtime.dialect.QuarkusPostgreSQL10Dialect"));
+                "io.quarkus.hibernate.orm.runtime.dialect.QuarkusPostgreSQL10Dialect"));
     }
 
     @BuildStep
