@@ -108,7 +108,8 @@ public final class ProxyDefinitions {
                     + "') as it's final. Your application might perform better if we're allowed to extend it.");
             return null;
         }
-        final java.util.Set<Class<?>> proxyInterfaces = org.hibernate.proxy.pojo.ProxyFactoryHelper.extractProxyInterfaces( persistentClass, entityName);
+        final java.util.Set<Class<?>> proxyInterfaces = org.hibernate.proxy.pojo.ProxyFactoryHelper
+                .extractProxyInterfaces(persistentClass, entityName);
         PreGeneratedProxies.ProxyClassDetailsHolder preProxy = preGeneratedProxies.getProxies()
                 .get(persistentClass.getClassName());
         Class<?> preGeneratedProxy = null;
