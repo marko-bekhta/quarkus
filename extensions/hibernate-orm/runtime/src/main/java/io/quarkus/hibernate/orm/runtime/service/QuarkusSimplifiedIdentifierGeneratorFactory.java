@@ -76,9 +76,25 @@ final class QuarkusSimplifiedIdentifierGeneratorFactory
         return dialect;
     }
 
-    @Override
-    public void setDialect(Dialect dialect) {
-        //This is all commented out in the original code in Hibernate ORM as well
+    @Override //Same-as-upstream
+    public IdentifierGenerator createIdentifierGenerator(
+            GenerationType generationType,
+            String generatedValueGeneratorName,
+            String generatorName,
+            JavaType<?> javaType,
+            Properties config,
+            GeneratorDefinitionResolver definitionResolver) {
+        final GenerationTypeStrategy strategy = generatorTypeStrategyMap.get(generationType);
+        if (strategy != null) {
+            return strategy.createIdentifierGenerator(
+                    generationType,
+                    generatorName,
+                    javaType,
+                    config,
+                    definitionResolver,
+                    serviceRegistry);
+        }
+        throw new UnsupportedOperationException("No GenerationTypeStrategy specified");
     }
 
     @Override
