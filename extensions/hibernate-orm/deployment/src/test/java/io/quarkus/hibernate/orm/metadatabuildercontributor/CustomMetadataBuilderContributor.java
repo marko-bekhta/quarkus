@@ -4,6 +4,7 @@ import static org.hibernate.query.sqm.produce.function.FunctionParameterType.STR
 
 import java.util.List;
 
+import org.hibernate.boot.MetadataBuilder;
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.FunctionContributor;
 import org.hibernate.query.sqm.function.AbstractSqmSelfRenderingFunctionDescriptor;
@@ -17,9 +18,13 @@ import org.hibernate.sql.ast.tree.SqlAstNode;
 import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.spi.TypeConfiguration;
 
-//TODO 1 rename class
-//TODO 2 ensure this implementation still matches the needs of the test using it
-public class CustomMetadataBuilderContributor implements FunctionContributor {
+public class CustomMetadataBuilderContributor implements org.hibernate.boot.spi.MetadataBuilderContributor,
+        FunctionContributor {
+
+    @Override
+    public void contribute(MetadataBuilder metadataBuilder) {
+        metadataBuilder.applyFunctions(this);
+    }
 
     @Override
     public void contributeFunctions(FunctionContributions functionContributions) {
