@@ -3,7 +3,7 @@ package io.quarkus.hibernate.orm.panache.runtime;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 
-import org.hibernate.query.internal.QueryImpl;
+import org.hibernate.query.spi.AbstractQuery;
 
 import io.quarkus.hibernate.orm.panache.common.runtime.CommonPanacheQueryImpl;
 
@@ -21,11 +21,11 @@ public class CustomCountPanacheQuery<Entity> extends PanacheQueryImpl<Entity> {
     }
 
     @SuppressWarnings("rawtypes")
-    private static QueryImpl castQuery(Query jpaQuery) {
-        if (!(jpaQuery instanceof QueryImpl)) {
+    private static AbstractQuery castQuery(Query jpaQuery) {
+        if (!(jpaQuery instanceof AbstractQuery)) {
             throw new IllegalArgumentException("Unexpected Query class: '" + jpaQuery.getClass().getName() + "', where '"
-                    + QueryImpl.class.getName() + "' is expected.");
+                    + AbstractQuery.class.getName() + "' is expected.");
         }
-        return (QueryImpl) jpaQuery;
+        return (AbstractQuery) jpaQuery;
     }
 }
