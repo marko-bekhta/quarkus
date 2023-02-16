@@ -195,8 +195,10 @@
                 <module>hibernate-search-orm-elasticsearch-coordination-outbox-polling</module>
                 <module>hibernate-search-orm-opensearch</module>
                 <module>hibernate-search-orm-elasticsearch-tenancy</module>
+                <!--
                 <module>hibernate-orm-tenancy</module>
                 <module>hibernate-orm-envers</module>
+                -->
                 <module>vertx-http</module>
                 <module>vertx-web</module>
                 <module>vertx-web-jackson</module>
