@@ -26,7 +26,7 @@ class TestEndpointRunner {
 
     @Test
     fun testModel() {
-        val con = (em.delegate as SessionImpl).connection()
+        val con = (em.delegate as SessionImpl).jdbcCoordinator.logicalConnection.physicalConnection
 
         val schema = mutableMapOf<String, Map<String, String>>()
         val result: ResultSet = con.metaData.getTables(null, "PUBLIC", null, arrayOf("TABLE"))
