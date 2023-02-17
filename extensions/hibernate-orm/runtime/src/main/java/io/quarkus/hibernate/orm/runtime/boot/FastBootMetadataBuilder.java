@@ -646,8 +646,6 @@ public class FastBootMetadataBuilder {
             return;
         }
 
-        //MetadataBuilderContributor is deprecated: be lenient while interpreting this property.
-        // Potentially this could be a TypeContributor, FunctionContributor, AdditionalMappingContributor.
         MetadataBuilderContributor metadataBuilderContributor = loadSettingInstance(
                 EntityManagerFactoryBuilderImpl.METADATA_BUILDER_CONTRIBUTOR,
                 metadataBuilderContributorSetting,
