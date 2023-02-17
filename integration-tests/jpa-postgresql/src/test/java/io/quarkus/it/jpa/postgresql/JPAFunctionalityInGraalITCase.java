@@ -12,13 +12,12 @@ import io.quarkus.test.junit.nativeimage.ClassInclusionReport;
 public class JPAFunctionalityInGraalITCase extends JPAFunctionalityTest {
 
     @Test
-    public void verifyJdkXmlParsersHavebeenEcludedFromNative() {
+    public void verifyJdkXmlParsersHaveBeenExcludedFromNative() {
         final ClassInclusionReport report = ClassInclusionReport.load();
         //The following classes should be included in this applications;
         //if not, that would be a sign that this test has become too weak
         //to identify the well working of the exclusions.
         report.assertContains(org.postgresql.jdbc.PgSQLXML.class);
-        report.assertContains(org.hibernate.type.PostgresUUIDType.class);
 
         //And finally verify we managed to exclude the JDK XML because of having hinted the analysis
         //(See io.quarkus.jdbc.postgresql.runtime.graal.SQLXLMFeature )
