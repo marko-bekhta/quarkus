@@ -2,14 +2,18 @@ package io.quarkus.it.elasticsearch;
 
 import static io.restassured.RestAssured.get;
 import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
 import io.restassured.common.mapper.TypeRef;
+import io.restassured.parsing.Parser;
 
 @QuarkusTest
 public class FruitResourceTest {
@@ -17,12 +21,15 @@ public class FruitResourceTest {
     };
 
     @Test
-    public void testEndpoint() throws InterruptedException {
+    public void testEndpoint() {
+        RestAssured.defaultParser = Parser.JSON;
+
         // create a Fruit
         Fruit fruit = new Fruit();
         fruit.id = "1";
         fruit.name = "Apple";
         fruit.color = "Green";
+
         given()
                 .contentType("application/json")
                 .body(fruit)
@@ -30,28 +37,52 @@ public class FruitResourceTest {
                 .then()
                 .statusCode(201);
 
-        // get the Fruit
-        Fruit result = get("/fruits/1").as(Fruit.class);
-        Assertions.assertNotNull(result);
-        Assertions.assertEquals("1", result.id);
-        Assertions.assertEquals("Apple", result.name);
-        Assertions.assertEquals("Green", result.color);
+        await().atMost(2, TimeUnit.SECONDS).pollDelay(500, TimeUnit.MILLISECONDS).untilAsserted(() -> {
+            // get the Fruit
+            Fruit result = get("/fruits/1").as(Fruit.class);
 
-        // wait a few ms for the indexing to happened
-        Thread.sleep(1000);
+            assertThat(result).isNotNull().isEqualTo(fruit);
+
+        });
 
         // search the Fruit
         List<Fruit> results = get("/fruits/search?color=Green").as(LIST_OF_FRUIT_TYPE_REF);
-        Assertions.assertNotNull(results);
-        Assertions.assertFalse(results.isEmpty());
-        Assertions.assertEquals("1", results.get(0).id);
-        Assertions.assertEquals("Apple", results.get(0).name);
-        Assertions.assertEquals("Green", results.get(0).color);
+        assertThat(results).hasSize(1).contains(fruit);
+
         results = get("/fruits/search?name=Apple").as(LIST_OF_FRUIT_TYPE_REF);
-        Assertions.assertNotNull(results);
-        Assertions.assertFalse(results.isEmpty());
-        Assertions.assertEquals("1", results.get(0).id);
-        Assertions.assertEquals("Apple", results.get(0).name);
-        Assertions.assertEquals("Green", results.get(0).color);
+        assertThat(results).hasSize(1).contains(fruit);
+
+        //create new fruit index via bulk operation
+        Fruit pomegranate = new Fruit();
+        pomegranate.id = "2";
+        pomegranate.name = "Pomegranate";
+        pomegranate.color = "Red";
+
+        List<Fruit> fruits = List.of(pomegranate);
+
+        given()
+                .contentType("application/json")
+                .body(fruits)
+                .when().post("/fruits/bulk")
+                .then()
+                .statusCode(200);
+
+        await().atMost(2, TimeUnit.SECONDS).pollDelay(500, TimeUnit.MILLISECONDS).untilAsserted(() -> {
+            Fruit result = get("/fruits/2").as(Fruit.class);
+            assertThat(result).isNotNull().isEqualTo(pomegranate);
+        });
+
+        given()
+                .contentType("application/json")
+                .body(List.of(pomegranate.id))
+                .when().delete("/fruits/bulk")
+                .then()
+                .statusCode(200);
+
+        await().atMost(2, TimeUnit.SECONDS).pollDelay(500, TimeUnit.MILLISECONDS).untilAsserted(() -> {
+            Fruit result = get("/fruits/2").as(Fruit.class);
+            assertThat(result).isNull();
+        });
+
     }
 }
