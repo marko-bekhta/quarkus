@@ -43,14 +43,13 @@ public class FruitResourceTest {
 
             assertThat(result).isNotNull().isEqualTo(fruit);
 
+            // search the Fruit
+            List<Fruit> results = get("/fruits/search?color=Green").as(LIST_OF_FRUIT_TYPE_REF);
+            assertThat(results).hasSize(1).contains(fruit);
+
+            results = get("/fruits/search?name=Apple").as(LIST_OF_FRUIT_TYPE_REF);
+            assertThat(results).hasSize(1).contains(fruit);
         });
-
-        // search the Fruit
-        List<Fruit> results = get("/fruits/search?color=Green").as(LIST_OF_FRUIT_TYPE_REF);
-        assertThat(results).hasSize(1).contains(fruit);
-
-        results = get("/fruits/search?name=Apple").as(LIST_OF_FRUIT_TYPE_REF);
-        assertThat(results).hasSize(1).contains(fruit);
 
         //create new fruit index via bulk operation
         Fruit pomegranate = new Fruit();
@@ -80,8 +79,10 @@ public class FruitResourceTest {
                 .statusCode(200);
 
         await().atMost(2, TimeUnit.SECONDS).pollDelay(500, TimeUnit.MILLISECONDS).untilAsserted(() -> {
-            Fruit result = get("/fruits/2").as(Fruit.class);
-            assertThat(result).isNull();
+            // search the removed Fruit should yield no results
+            // using a simple get-doc-by-id won't work since we will get an 500 error response:
+            List<Fruit> results = get("/fruits/search?color=Red").as(LIST_OF_FRUIT_TYPE_REF);
+            assertThat(results).isEmpty();
         });
 
     }
