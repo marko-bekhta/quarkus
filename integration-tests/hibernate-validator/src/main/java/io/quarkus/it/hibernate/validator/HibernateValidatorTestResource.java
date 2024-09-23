@@ -45,6 +45,7 @@ import io.quarkus.it.hibernate.validator.custom.MyOtherBean;
 import io.quarkus.it.hibernate.validator.groups.MyBeanWithGroups;
 import io.quarkus.it.hibernate.validator.groups.ValidationGroups;
 import io.quarkus.it.hibernate.validator.injection.InjectedConstraintValidatorConstraint;
+import io.quarkus.it.hibernate.validator.injection.InjectedPropertyConstraintValidatorConstraint;
 import io.quarkus.it.hibernate.validator.injection.MyService;
 import io.quarkus.it.hibernate.validator.orm.TestEntity;
 import io.quarkus.runtime.StartupEvent;
@@ -198,6 +199,11 @@ public class HibernateValidatorTestResource
         result.append(formatViolations(validator.validate(new BeanWithInjectedConstraintValidatorConstraint(MyService.VALID))));
 
         result.append(formatViolations(validator.validate(new BeanWithInjectedConstraintValidatorConstraint("Invalid value"))));
+
+        result.append(formatViolations(validator.validate(new BeanWithInjectedPropertyConstraintValidatorConstraint("1234"))));
+
+        result.append(formatViolations(
+                validator.validate(new BeanWithInjectedPropertyConstraintValidatorConstraint("Invalid value"))));
 
         return result.build();
     }
@@ -424,6 +430,20 @@ public class HibernateValidatorTestResource
         private String value;
 
         public BeanWithInjectedConstraintValidatorConstraint(String value) {
+            this.value = value;
+        }
+
+        public String getValue() {
+            return value;
+        }
+    }
+
+    public static class BeanWithInjectedPropertyConstraintValidatorConstraint {
+
+        @InjectedPropertyConstraintValidatorConstraint
+        private String value;
+
+        public BeanWithInjectedPropertyConstraintValidatorConstraint(String value) {
             this.value = value;
         }
 
