@@ -263,12 +263,12 @@ public final class HibernateReactiveProcessor {
                         io.quarkus.hibernate.orm.runtime.migration.MultiTenancyStrategy.NONE,
                         hibernateOrmConfig.database().ormCompatibilityVersion(),
                         hibernateOrmConfig.mapping().format().global(),
-                        jsonFormatterCustomizationCheck,
+                        jsonFormatterCustomizationCheck, jsonMapper, xmlMapper,
                         persistenceUnitConfig.unsupportedProperties()),
                 null,
                 jpaModel.getXmlMappings(reactivePU.getName()),
                 false,
-                isHibernateValidatorPresent(capabilities), jsonMapper, xmlMapper));
+                isHibernateValidatorPresent(capabilities)));
     }
 
     private static <T> Optional<T> findDataSourceWithNameDefault(String persistenceUnitName,

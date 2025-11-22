@@ -95,17 +95,19 @@ public enum BuiltinFormatMapperBehaviour {
         }
     }
 
-    public void jsonApply(MetadataImplementor metadata, String puName, ArcContainer container,
+    public boolean jsonApply(MetadataImplementor metadata, String puName, ArcContainer container,
             JsonFormatterCustomizationCheck check) {
         if (hasJsonProperties(metadata)) {
             List<String> causes = check.apply(container);
             if (!causes.isEmpty()) {
                 action(puName, TYPE_JSON, causes);
             }
+            return true;
         }
+        return false;
     }
 
-    public void xmlApply(MetadataImplementor metadata, String puName) {
+    public boolean xmlApply(MetadataImplementor metadata, String puName) {
         // XML mapper can only be a JAXB based one. With Hibernate ORM 7.0 there was a change in the mapper:
         // org.hibernate.type.format.jaxb.JaxbXmlFormatMapper -- where a new format was introduced
         // and legacy one would be currently used for Quarkus. If we just bypass the built-in one, we will break the user data.
@@ -118,7 +120,9 @@ public enum BuiltinFormatMapperBehaviour {
         if (hasXmlProperties(metadata)) {
             action(puName, TYPE_XML,
                     List.of("The XML format mapper uses the legacy format. It is not compatible with the new default one."));
+            return true;
         }
+        return false;
     }
 
     protected abstract void action(String puName, String type, List<String> causes);

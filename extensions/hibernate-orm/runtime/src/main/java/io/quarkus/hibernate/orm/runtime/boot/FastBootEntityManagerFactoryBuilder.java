@@ -2,6 +2,7 @@ package io.quarkus.hibernate.orm.runtime.boot;
 
 import java.io.Serializable;
 import java.security.NoSuchAlgorithmException;
+import java.util.Optional;
 
 import javax.sql.DataSource;
 
@@ -37,6 +38,7 @@ import io.quarkus.hibernate.orm.XmlFormat;
 import io.quarkus.hibernate.orm.runtime.PersistenceUnitUtil;
 import io.quarkus.hibernate.orm.runtime.RuntimeSettings;
 import io.quarkus.hibernate.orm.runtime.customized.BuiltinFormatMapperBehaviour;
+import io.quarkus.hibernate.orm.runtime.customized.FormatMapperKind;
 import io.quarkus.hibernate.orm.runtime.customized.JsonFormatterCustomizationCheck;
 import io.quarkus.hibernate.orm.runtime.migration.MultiTenancyStrategy;
 import io.quarkus.hibernate.orm.runtime.observers.QuarkusSessionFactoryObserverForDbVersionCheck;
@@ -55,6 +57,8 @@ public class FastBootEntityManagerFactoryBuilder implements EntityManagerFactory
     private final Object cdiBeanManager;
     private final BuiltinFormatMapperBehaviour builtinFormatMapperBehaviour;
     private final JsonFormatterCustomizationCheck jsonFormatterCustomizationCheck;
+    private final Optional<FormatMapperKind> jsonMapper;
+    private final Optional<FormatMapperKind> xmlMapper;
 
     protected final MultiTenancyStrategy multiTenancyStrategy;
     protected final boolean shouldApplySchemaMigration;
@@ -65,7 +69,8 @@ public class FastBootEntityManagerFactoryBuilder implements EntityManagerFactory
             StandardServiceRegistry standardServiceRegistry, RuntimeSettings runtimeSettings, Object validatorFactory,
             Object cdiBeanManager, MultiTenancyStrategy multiTenancyStrategy, boolean shouldApplySchemaMigration,
             BuiltinFormatMapperBehaviour builtinFormatMapperBehaviour,
-            JsonFormatterCustomizationCheck jsonFormatterCustomizationCheck) {
+            JsonFormatterCustomizationCheck jsonFormatterCustomizationCheck,
+            Optional<FormatMapperKind> jsonMapper, Optional<FormatMapperKind> xmlMapper) {
         this.puDescriptor = puDescriptor;
         this.metadata = metadata;
         this.standardServiceRegistry = standardServiceRegistry;
@@ -76,6 +81,8 @@ public class FastBootEntityManagerFactoryBuilder implements EntityManagerFactory
         this.shouldApplySchemaMigration = shouldApplySchemaMigration;
         this.builtinFormatMapperBehaviour = builtinFormatMapperBehaviour;
         this.jsonFormatterCustomizationCheck = jsonFormatterCustomizationCheck;
+        this.jsonMapper = jsonMapper;
+        this.xmlMapper = xmlMapper;
     }
 
     @Override
@@ -221,15 +228,19 @@ public class FastBootEntityManagerFactoryBuilder implements EntityManagerFactory
         if (!jsonFormatMapper.isUnsatisfied()) {
             options.applyJsonFormatMapper(jsonFormatMapper.get());
         } else {
-            builtinFormatMapperBehaviour.jsonApply(metadata(), persistenceUnitName, Arc.container(),
-                    jsonFormatterCustomizationCheck);
+            if (builtinFormatMapperBehaviour.jsonApply(metadata(), persistenceUnitName, Arc.container(),
+                    jsonFormatterCustomizationCheck)) {
+                jsonMapper.map(FormatMapperKind::create).ifPresent(options::applyJsonFormatMapper);
+            }
         }
         InjectableInstance<FormatMapper> xmlFormatMapper = PersistenceUnitUtil.singleExtensionInstanceForPersistenceUnit(
                 FormatMapper.class, persistenceUnitName, XmlFormat.Literal.INSTANCE);
         if (!xmlFormatMapper.isUnsatisfied()) {
             options.applyXmlFormatMapper(xmlFormatMapper.get());
         } else {
-            builtinFormatMapperBehaviour.xmlApply(metadata(), persistenceUnitName);
+            if (builtinFormatMapperBehaviour.xmlApply(metadata(), persistenceUnitName)) {
+                xmlMapper.map(FormatMapperKind::create).ifPresent(options::applyJsonFormatMapper);
+            }
         }
     }
 

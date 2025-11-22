@@ -274,7 +274,9 @@ public final class FastBootHibernateReactivePersistenceProvider implements Persi
                     validatorFactory, cdiBeanManager, recordedState.getMultiTenancyStrategy(),
                     !blockingSessionFactoryExists,
                     recordedState.getBuildTimeSettings().getSource().getBuiltinFormatMapperBehaviour(),
-                    recordedState.getBuildTimeSettings().getSource().getJsonFormatterCustomizationCheck());
+                    recordedState.getBuildTimeSettings().getSource().getJsonFormatterCustomizationCheck(),
+                    recordedState.getBuildTimeSettings().getSource().getJsonMapper(),
+                    recordedState.getBuildTimeSettings().getSource().getXmlMapper());
         }
 
         log.debug("Found no matching persistence units");

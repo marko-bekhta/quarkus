@@ -372,10 +372,11 @@ public final class HibernateOrmProcessor {
                                     hibernateOrmConfig.database().ormCompatibilityVersion(),
                                     hibernateOrmConfig.mapping().format().global(),
                                     jsonFormatterCustomizationCheck,
+                                    jsonMapper, xmlMapper,
                                     Collections.emptyMap()),
                             null,
                             jpaModel.getXmlMappings(persistenceXmlDescriptorBuildItem.getDescriptor().getName()),
-                            true, isHibernateValidatorPresent(capabilities), jsonMapper, xmlMapper));
+                            true, isHibernateValidatorPresent(capabilities)));
         }
 
         if (impliedPU.shouldGenerateImpliedBlockingPersistenceUnit()) {
@@ -1024,12 +1025,12 @@ public final class HibernateOrmProcessor {
                                 multiTenancyStrategy,
                                 hibernateOrmConfig.database().ormCompatibilityVersion(),
                                 hibernateOrmConfig.mapping().format().global(),
-                                jsonFormatterCustomizationCheck,
+                                jsonFormatterCustomizationCheck, jsonMapper, xmlMapper,
                                 persistenceUnitConfig.unsupportedProperties()),
                         persistenceUnitConfig.multitenantSchemaDatasource().orElse(null),
                         xmlMappings,
                         false,
-                        isHibernateValidatorPresent(capabilities), jsonMapper, xmlMapper));
+                        isHibernateValidatorPresent(capabilities)));
     }
 
     private static Optional<DatabaseKind.SupportedDatabaseKind> collectDialectConfig(String persistenceUnitName,

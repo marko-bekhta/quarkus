@@ -1,5 +1,7 @@
 package io.quarkus.hibernate.reactive.runtime.boot;
 
+import java.util.Optional;
+
 import jakarta.persistence.EntityManagerFactory;
 
 import org.hibernate.boot.internal.SessionFactoryOptionsBuilder;
@@ -12,6 +14,7 @@ import io.quarkus.hibernate.orm.runtime.RuntimeSettings;
 import io.quarkus.hibernate.orm.runtime.boot.FastBootEntityManagerFactoryBuilder;
 import io.quarkus.hibernate.orm.runtime.boot.QuarkusPersistenceUnitDescriptor;
 import io.quarkus.hibernate.orm.runtime.customized.BuiltinFormatMapperBehaviour;
+import io.quarkus.hibernate.orm.runtime.customized.FormatMapperKind;
 import io.quarkus.hibernate.orm.runtime.customized.JsonFormatterCustomizationCheck;
 import io.quarkus.hibernate.orm.runtime.migration.MultiTenancyStrategy;
 import io.quarkus.hibernate.orm.runtime.recording.PrevalidatedQuarkusMetadata;
@@ -24,10 +27,11 @@ public final class FastBootReactiveEntityManagerFactoryBuilder extends FastBootE
             Object cdiBeanManager, MultiTenancyStrategy strategy,
             boolean shouldApplySchemaMigration,
             BuiltinFormatMapperBehaviour builtinFormatMapperBehaviour,
-            JsonFormatterCustomizationCheck jsonFormatterCustomizationCheck) {
+            JsonFormatterCustomizationCheck jsonFormatterCustomizationCheck,
+            Optional<FormatMapperKind> jsonMapper, Optional<FormatMapperKind> xmlMapper) {
         super(puDescriptor, metadata, standardServiceRegistry, runtimeSettings, validatorFactory,
                 cdiBeanManager, strategy, shouldApplySchemaMigration, builtinFormatMapperBehaviour,
-                jsonFormatterCustomizationCheck);
+                jsonFormatterCustomizationCheck, jsonMapper, xmlMapper);
     }
 
     @Override
