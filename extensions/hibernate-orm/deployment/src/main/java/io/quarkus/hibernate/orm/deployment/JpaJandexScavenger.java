@@ -422,7 +422,7 @@ public final class JpaJandexScavenger {
             ClassInfo klass = annotation.target().asClass();
             DotName targetDotName = klass.name();
             addClassHierarchyToReflectiveList(collector, targetDotName);
-            collectModelType(collector, klass);
+            //collectModelType(collector, klass);
         }
     }
 
@@ -557,11 +557,16 @@ public final class JpaJandexScavenger {
         collector.packages.add(packageName);
     }
 
-    private static void collectModelType(Collector collector, ClassInfo modelClass) {
+    private void collectModelType(Collector collector, ClassInfo modelClass) {
         String name = modelClass.name().toString();
         collector.modelTypes.add(name);
         if (modelClass.declaredAnnotation(ClassNames.JPA_ENTITY) != null) {
             collector.entityTypes.add(name);
+            HibernateAccessorBuildItem.Builder builder = new HibernateAccessorBuildItem.Builder(modelClass, index);
+            for (FieldInfo field : modelClass.fields()) {
+                builder.addField(field);
+            }
+            accessorBuildItemProducer.produce(builder.build());
         }
     }
 
