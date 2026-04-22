@@ -126,6 +126,7 @@ import io.quarkus.deployment.recording.RecorderContext;
 import io.quarkus.deployment.util.IoUtil;
 import io.quarkus.deployment.util.ServiceUtil;
 import io.quarkus.gizmo2.Gizmo;
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
 import io.quarkus.hibernate.orm.PersistenceUnit;
 import io.quarkus.hibernate.orm.deployment.integration.HibernateOrmIntegrationRuntimeConfiguredBuildItem;
 import io.quarkus.hibernate.orm.deployment.integration.HibernateOrmIntegrationStaticConfiguredBuildItem;
@@ -514,11 +515,12 @@ public final class HibernateOrmProcessor {
     @BuildStep
     public void defineJpaEntities(
             JpaModelIndexBuildItem indexBuildItem,
-            BuildProducer<JpaModelBuildItem> domainObjectsProducer,
             List<IgnorableNonIndexedClasses> ignorableNonIndexedClassesBuildItems,
+            List<JpaModelPersistenceUnitContributionBuildItem> jpaModelPuContributions,
+            BuildProducer<JpaModelBuildItem> domainObjectsProducer,
             BuildProducer<ReflectiveClassBuildItem> reflectiveClass,
             BuildProducer<HotDeploymentWatchedFileBuildItem> hotDeploymentWatchedFiles,
-            List<JpaModelPersistenceUnitContributionBuildItem> jpaModelPuContributions) throws BuildException {
+            BuildProducer<HibernateAccessorBuildItem> accessorBuildItemProducer) throws BuildException {
 
         Set<String> ignorableNonIndexedClasses = Collections.emptySet();
         if (!ignorableNonIndexedClassesBuildItems.isEmpty()) {
@@ -529,7 +531,7 @@ public final class HibernateOrmProcessor {
         }
 
         JpaJandexScavenger scavenger = new JpaJandexScavenger(reflectiveClass, hotDeploymentWatchedFiles,
-                jpaModelPuContributions, indexBuildItem.getIndex(), ignorableNonIndexedClasses);
+                accessorBuildItemProducer, jpaModelPuContributions, indexBuildItem.getIndex(), ignorableNonIndexedClasses);
         final JpaModelBuildItem domainObjects = scavenger.discoverModelAndRegisterForReflection();
         domainObjectsProducer.produce(domainObjects);
     }
