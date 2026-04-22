@@ -37,6 +37,7 @@ import io.quarkus.builder.BuildException;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.builditem.HotDeploymentWatchedFileBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
 import io.quarkus.hibernate.orm.deployment.xml.QuarkusMappingFileParser;
 import io.quarkus.hibernate.orm.runtime.boot.xml.RecordableXmlMapping;
 import io.quarkus.runtime.configuration.ConfigurationException;
@@ -61,17 +62,20 @@ public final class JpaJandexScavenger {
 
     private final BuildProducer<ReflectiveClassBuildItem> reflectiveClass;
     private final BuildProducer<HotDeploymentWatchedFileBuildItem> hotDeploymentWatchedFiles;
+    private final BuildProducer<HibernateAccessorBuildItem> accessorBuildItemProducer;
     private final List<JpaModelPersistenceUnitContributionBuildItem> persistenceUnitContributions;
     private final IndexView index;
     private final Set<String> ignorableNonIndexedClasses;
 
     JpaJandexScavenger(BuildProducer<ReflectiveClassBuildItem> reflectiveClass,
             BuildProducer<HotDeploymentWatchedFileBuildItem> hotDeploymentWatchedFiles,
+            BuildProducer<HibernateAccessorBuildItem> accessorBuildItemProducer,
             List<JpaModelPersistenceUnitContributionBuildItem> persistenceUnitContributions,
             IndexView index,
             Set<String> ignorableNonIndexedClasses) {
         this.reflectiveClass = reflectiveClass;
         this.hotDeploymentWatchedFiles = hotDeploymentWatchedFiles;
+        this.accessorBuildItemProducer = accessorBuildItemProducer;
         this.persistenceUnitContributions = persistenceUnitContributions;
         this.index = index;
         this.ignorableNonIndexedClasses = ignorableNonIndexedClasses;
@@ -422,7 +426,7 @@ public final class JpaJandexScavenger {
             ClassInfo klass = annotation.target().asClass();
             DotName targetDotName = klass.name();
             addClassHierarchyToReflectiveList(collector, targetDotName);
-            collectModelType(collector, klass);
+            //collectModelType(collector, klass);
         }
     }
 
@@ -557,11 +561,16 @@ public final class JpaJandexScavenger {
         collector.packages.add(packageName);
     }
 
-    private static void collectModelType(Collector collector, ClassInfo modelClass) {
+    private void collectModelType(Collector collector, ClassInfo modelClass) {
         String name = modelClass.name().toString();
         collector.modelTypes.add(name);
         if (modelClass.declaredAnnotation(ClassNames.JPA_ENTITY) != null) {
             collector.entityTypes.add(name);
+            HibernateAccessorBuildItem.Builder builder = new HibernateAccessorBuildItem.Builder(modelClass, index);
+            for (FieldInfo field : modelClass.fields()) {
+                builder.addField(field);
+            }
+            accessorBuildItemProducer.produce(builder.build());
         }
     }
 

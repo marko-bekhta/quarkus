@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 
 import io.quarkus.deployment.builditem.HotDeploymentWatchedFileBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
 import io.quarkus.hibernate.orm.packages.ParentEntity;
 import io.quarkus.hibernate.orm.xml.hbm.NonAnnotatedComponent;
 import io.quarkus.hibernate.orm.xml.hbm.NonAnnotatedComponentUsingEntity;
@@ -517,9 +518,11 @@ public class JpaJandexScavengerTest {
         }
 
         List<HotDeploymentWatchedFileBuildItem> watchedFiles = new ArrayList<>();
+        List<HibernateAccessorBuildItem> accessorBuildItemProducer = new ArrayList<>();
         JpaJandexScavenger scavenger = new JpaJandexScavenger(
                 new ArrayList<ReflectiveClassBuildItem>()::add,
                 watchedFiles::add,
+                accessorBuildItemProducer::add,
                 contributions,
                 index,
                 ignorableNonIndexedClasses);
