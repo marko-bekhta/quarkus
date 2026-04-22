@@ -15,6 +15,7 @@ import static org.hibernate.cfg.AvailableSettings.URL;
 import static org.hibernate.cfg.AvailableSettings.USER;
 import static org.hibernate.cfg.AvailableSettings.XML_MAPPING_ENABLED;
 
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -28,9 +29,11 @@ import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.PersistenceUnitTransactionType;
 
+import org.hibernate.accessor.HibernateAccessorFactory;
 import org.hibernate.boot.CacheRegionDefinition;
 import org.hibernate.boot.MetadataBuilder;
 import org.hibernate.boot.MetadataSources;
@@ -59,6 +62,7 @@ import org.hibernate.jpa.boot.spi.TypeContributorList;
 import org.hibernate.jpa.internal.JpaLogger;
 import org.hibernate.jpa.internal.util.LogHelper;
 import org.hibernate.jpa.internal.util.PersistenceUnitTransactionTypeHelper;
+import org.hibernate.property.access.spi.HibernateAccessorFactoryResolver;
 import org.hibernate.resource.jdbc.spi.PhysicalConnectionHandlingMode;
 import org.hibernate.resource.transaction.backend.jdbc.internal.JdbcResourceLocalTransactionCoordinatorBuilderImpl;
 import org.hibernate.resource.transaction.backend.jta.internal.JtaTransactionCoordinatorBuilderImpl;
@@ -146,6 +150,7 @@ public class FastBootMetadataBuilder {
         this.standardServiceRegistry = ssrBuilder.build();
 
         this.providedServices = ssrBuilder.getProvidedServices();
+        this.providedServices.add( new ProvidedService<>(HibernateAccessorFactoryResolver.class, (HibernateAccessorFactoryResolver) QuarkusHibernateAccessorFactory::instance));
 
         /**
          * This is required to properly integrate Hibernate Envers.
