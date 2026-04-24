@@ -1,5 +1,6 @@
 package io.quarkus.hibernate.orm.deployment;
 
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -155,6 +156,17 @@ public final class JpaJandexScavenger {
             forReflection.add(javaType.toString());
         }
         reflectiveClass.produce(ReflectiveClassBuildItem.builder(forReflection).constructors().build());
+
+        for (String managedClassName : managedClassNames) {
+            ClassInfo accessorClass = index.getClassByName(managedClassName);
+            HibernateAccessorBuildItem.Builder builder = new HibernateAccessorBuildItem.Builder(accessorClass, index);
+            for (FieldInfo field : accessorClass.fields()) {
+                if (!Modifier.isStatic(field.flags())) {
+                    builder.addField(field);
+                }
+            }
+            accessorBuildItemProducer.produce(builder.build());
+        }
 
         return new JpaModelBuildItem(collector.packages, collector.entityTypes, managedClassNames,
                 collector.potentialCdiBeanTypes, collector.xmlMappingsByPU);
@@ -426,7 +438,7 @@ public final class JpaJandexScavenger {
             ClassInfo klass = annotation.target().asClass();
             DotName targetDotName = klass.name();
             addClassHierarchyToReflectiveList(collector, targetDotName);
-            //collectModelType(collector, klass);
+            collectModelType(collector, klass);
         }
     }
 
@@ -561,16 +573,11 @@ public final class JpaJandexScavenger {
         collector.packages.add(packageName);
     }
 
-    private void collectModelType(Collector collector, ClassInfo modelClass) {
+    private static void collectModelType(Collector collector, ClassInfo modelClass) {
         String name = modelClass.name().toString();
         collector.modelTypes.add(name);
         if (modelClass.declaredAnnotation(ClassNames.JPA_ENTITY) != null) {
             collector.entityTypes.add(name);
-            HibernateAccessorBuildItem.Builder builder = new HibernateAccessorBuildItem.Builder(modelClass, index);
-            for (FieldInfo field : modelClass.fields()) {
-                builder.addField(field);
-            }
-            accessorBuildItemProducer.produce(builder.build());
         }
     }
 

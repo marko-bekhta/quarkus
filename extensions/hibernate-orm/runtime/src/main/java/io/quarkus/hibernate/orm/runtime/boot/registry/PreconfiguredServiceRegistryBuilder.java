@@ -43,6 +43,7 @@ import io.quarkus.hibernate.orm.runtime.recording.RecordedState;
 import io.quarkus.hibernate.orm.runtime.service.CfgXmlAccessServiceInitiatorQuarkus;
 import io.quarkus.hibernate.orm.runtime.service.FlatClassLoaderService;
 import io.quarkus.hibernate.orm.runtime.service.QuarkusConnectionProviderInitiator;
+import io.quarkus.hibernate.orm.runtime.service.QuarkusHibernateAccessorFactoryResolverInitiator;
 import io.quarkus.hibernate.orm.runtime.service.QuarkusImportSqlCommandExtractorInitiator;
 import io.quarkus.hibernate.orm.runtime.service.QuarkusMutationExecutorServiceInitiator;
 import io.quarkus.hibernate.orm.runtime.service.QuarkusRegionFactoryInitiator;
@@ -250,6 +251,8 @@ public class PreconfiguredServiceRegistryBuilder {
 
         // Custom Quarkus implementation: overrides the internal cache to leverage Caffeine
         serviceInitiators.add(QuarkusInternalCacheFactoryInitiator.INSTANCE);
+
+        serviceInitiators.add(QuarkusHibernateAccessorFactoryResolverInitiator.INSTANCE);
 
         serviceInitiators.trimToSize();
         return serviceInitiators;

@@ -113,6 +113,8 @@ public final class StandardHibernateORMInitiatorListProvider implements InitialI
         // Custom Quarkus implementation: overrides the internal cache to leverage Caffeine
         serviceInitiators.add(QuarkusInternalCacheFactoryInitiator.INSTANCE);
 
+        serviceInitiators.add(QuarkusHibernateAccessorFactoryResolverInitiator.INSTANCE);
+
         serviceInitiators.trimToSize();
 
         return serviceInitiators;

@@ -10,12 +10,13 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Opcodes;
 
 import io.quarkus.deployment.util.AsmUtil;
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
 
 class HibernateAccessorGetterFunction implements BiFunction<String, ClassVisitor, ClassVisitor> {
 
-    private final String getter;
+    private final MethodMetadata getter;
 
-    public HibernateAccessorGetterFunction(String getter) {
+    public HibernateAccessorGetterFunction(MethodMetadata getter) {
         this.getter = getter;
     }
 
@@ -25,10 +26,10 @@ class HibernateAccessorGetterFunction implements BiFunction<String, ClassVisitor
     }
 
     private static class GetterAccessorsClassVisitor extends ClassVisitor {
-        private final String getter;
+        private final MethodMetadata getter;
         private final String outerClassName;
 
-        protected GetterAccessorsClassVisitor(ClassVisitor visitor, String getter, String outerClassName) {
+        protected GetterAccessorsClassVisitor(ClassVisitor visitor, MethodMetadata getter, String outerClassName) {
             super(AsmUtil.ASM_API_VERSION, visitor);
             this.getter = getter;
             this.outerClassName = outerClassName;
@@ -37,7 +38,7 @@ class HibernateAccessorGetterFunction implements BiFunction<String, ClassVisitor
         @Override
         public void visitEnd() {
             String outerName = fqcnToName(outerClassName);
-            String simpleName = methodReaderClassName(getter);
+            String simpleName = methodReaderClassName(getter.name());
             String internalName = accessorFqcn(outerName, simpleName);
             cv.visitInnerClass(
                     internalName,

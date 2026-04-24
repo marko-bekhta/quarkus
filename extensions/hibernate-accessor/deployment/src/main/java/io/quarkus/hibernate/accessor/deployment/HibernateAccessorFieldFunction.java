@@ -1,9 +1,9 @@
 package io.quarkus.hibernate.accessor.deployment;
 
-import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldReaderClassName;
-import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldWriterClassName;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.accessorFqcn;
+import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldReaderClassName;
+import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldWriterClassName;
 import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.FieldMetadata;
 
 import java.util.function.BiFunction;

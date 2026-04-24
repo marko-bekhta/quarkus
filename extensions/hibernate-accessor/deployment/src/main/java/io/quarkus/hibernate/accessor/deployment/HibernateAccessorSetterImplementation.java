@@ -6,14 +6,15 @@ import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodWriterC
 
 import org.objectweb.asm.ClassWriter;
 
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
 import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.TypeMetadata;
 
 public class HibernateAccessorSetterImplementation {
 
-    private final String setter;
+    private final MethodMetadata setter;
     private final TypeMetadata outerClass;
 
-    public HibernateAccessorSetterImplementation(String setter, TypeMetadata outerClass) {
+    public HibernateAccessorSetterImplementation(MethodMetadata setter, TypeMetadata outerClass) {
         this.setter = setter;
         this.outerClass = outerClass;
     }
@@ -28,6 +29,6 @@ public class HibernateAccessorSetterImplementation {
     }
 
     public String getWriterName() {
-        return composeNestedName(outerClass.name(), methodWriterClassName(setter));
+        return composeNestedName(outerClass.name(), methodWriterClassName(setter.name()));
     }
 }
