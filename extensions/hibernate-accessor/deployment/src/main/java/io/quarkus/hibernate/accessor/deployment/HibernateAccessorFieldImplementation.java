@@ -1,9 +1,9 @@
 package io.quarkus.hibernate.accessor.deployment;
 
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.composeNestedName;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldReaderClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldWriterClassName;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.FieldMetadata;
 import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.TypeMetadata;
 
@@ -13,9 +13,6 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
-
-import io.quarkus.gizmo.Gizmo;
-import io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory;
 
 class HibernateAccessorFieldImplementation {
 
@@ -32,7 +29,7 @@ class HibernateAccessorFieldImplementation {
     }
 
     public byte[] generateWriterBytes() {
-        return InnerClassGenerator.generateWriter(fqcnToName(getReaderName()), outerClass, field);
+        return InnerClassGenerator.generateWriter(fqcnToName(getWriterName()), outerClass, field);
     }
 
     public String getReaderName() {
@@ -43,11 +40,10 @@ class HibernateAccessorFieldImplementation {
         return composeNestedName(outerClass.name(), fieldWriterClassName(field.name()));
     }
 
-    public class InnerClassGenerator implements Opcodes {
+    private static class InnerClassGenerator implements Opcodes {
 
         private static final String WRITER_INTERFACE = fqcnToName(HibernateAccessorValueWriter.class.getName());
         private static final String READER_INTERFACE = fqcnToName(HibernateAccessorValueReader.class.getName());
-        private static final String FACTORY_CLASS = fqcnToName(QuarkusHibernateAccessorFactory.class.getName());
 
         /**
          * Generates bytecode for an accessor writer inner class.
@@ -64,16 +60,12 @@ class HibernateAccessorFieldImplementation {
 
             // Visit class header
             cw.visit(
-                    Gizmo.ASM_API_VERSION,
-                    ACC_PUBLIC | ACC_SUPER | ACC_STATIC,
+                    V17,
+                    ACC_PUBLIC | ACC_SUPER,
                     innerClassName,
                     null,
                     "java/lang/Object",
                     new String[] { WRITER_INTERFACE });
-
-            // Declare nest host so the inner class can access private fields of the outer class
-
-            cw.visitNestHost(outerClass.host());
 
             // Declare this as inner class of outer class
             String simpleInnerName = innerClassName.substring(outerClassName.length() + 1);
@@ -83,11 +75,15 @@ class HibernateAccessorFieldImplementation {
                     simpleInnerName,
                     ACC_PUBLIC | ACC_STATIC);
 
+            // Declare nest host so the inner class can access private fields of the outer class
+
+            cw.visitNestHost(fqcnToName(outerClass.host()));
+
             // Generate INSTANCE static field
             generateWriterInstanceField(cw, innerClassName);
 
-            // Generate constructor
-            generateWriterConstructor(cw, innerClassName, innerClassName, FACTORY_CLASS);
+            // Generate constructor for reader
+            generateConstructor(cw);
 
             // Generate set() method
             generateWriterSetMethod(cw, outerClassName, field);
@@ -110,40 +106,6 @@ class HibernateAccessorFieldImplementation {
                     null,
                     null);
             fv.visitEnd();
-        }
-
-        /**
-         * Generates the constructor that registers the instance in HibernateAccessorFactory.writerCache.
-         */
-        private static void generateWriterConstructor(ClassWriter cw, String innerClassName, String cacheKey,
-                String factoryClassName) {
-            MethodVisitor mv = cw.visitMethod(
-                    ACC_PUBLIC,
-                    "<init>",
-                    "()V",
-                    null,
-                    null);
-            mv.visitCode();
-
-            // Call super()
-            mv.visitVarInsn(ALOAD, 0);
-            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
-
-            // HibernateAccessorFactory.writerCache.put(cacheKey, this)
-            mv.visitFieldInsn(GETSTATIC, factoryClassName, "writerCache", "Ljava/util/Map;");
-            mv.visitLdcInsn(cacheKey);
-            mv.visitVarInsn(ALOAD, 0);
-            mv.visitMethodInsn(
-                    INVOKEINTERFACE,
-                    "java/util/Map",
-                    "put",
-                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
-                    true);
-            mv.visitInsn(POP); // Discard return value from put()
-
-            mv.visitInsn(RETURN);
-            mv.visitMaxs(0, 0); // COMPUTE_FRAMES will calculate
-            mv.visitEnd();
         }
 
         /**
@@ -240,15 +202,12 @@ class HibernateAccessorFieldImplementation {
 
             // Visit class header
             cw.visit(
-                    Gizmo.ASM_API_VERSION,
-                    ACC_PUBLIC | ACC_SUPER | ACC_STATIC,
+                    V17,
+                    ACC_PUBLIC | ACC_SUPER,
                     innerClassName,
                     classSignature,
                     "java/lang/Object",
                     new String[] { READER_INTERFACE });
-
-            // Declare nest host so the inner class can access private fields of the outer class
-            cw.visitNestHost(outerClass.host());
 
             // Declare this as inner class of outer class
             String simpleInnerName = innerClassName.substring(outerClassName.length() + 1);
@@ -258,11 +217,14 @@ class HibernateAccessorFieldImplementation {
                     simpleInnerName,
                     ACC_PUBLIC | ACC_STATIC);
 
+            // Declare nest host so the inner class can access private fields of the outer class
+            cw.visitNestHost(fqcnToName(outerClass.host()));
+
             // Generate INSTANCE static field
             generateWriterInstanceField(cw, innerClassName);
 
             // Generate constructor for reader
-            generateReaderConstructor(cw, innerClassName, innerClassName, FACTORY_CLASS);
+            generateConstructor(cw);
 
             // Generate get() method
             generateGetMethod(cw, outerClassName, field);
@@ -275,34 +237,13 @@ class HibernateAccessorFieldImplementation {
         }
 
         /**
-         * Generates the constructor for reader that registers in HibernateAccessorFactory.readerCache.
+         * Generates the constructor;
          */
-        private static void generateReaderConstructor(ClassWriter cw, String innerClassName, String cacheKey,
-                String factoryClassName) {
-            MethodVisitor mv = cw.visitMethod(
-                    ACC_PUBLIC,
-                    "<init>",
-                    "()V",
-                    null,
-                    null);
+        private static void generateConstructor(ClassWriter cw) {
+            MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
             mv.visitCode();
-
-            // Call super()
             mv.visitVarInsn(ALOAD, 0);
             mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
-
-            // HibernateAccessorFactory.readerCache.put(cacheKey, this)
-            mv.visitFieldInsn(GETSTATIC, factoryClassName, "readerCache", "Ljava/util/Map;");
-            mv.visitLdcInsn(cacheKey);
-            mv.visitVarInsn(ALOAD, 0);
-            mv.visitMethodInsn(
-                    INVOKEINTERFACE,
-                    "java/util/Map",
-                    "put",
-                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
-                    true);
-            mv.visitInsn(POP); // Discard return value from put()
-
             mv.visitInsn(RETURN);
             mv.visitMaxs(0, 0); // COMPUTE_FRAMES will calculate
             mv.visitEnd();

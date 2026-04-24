@@ -29,10 +29,10 @@ public final class NamingUtil {
     }
 
     private static String readerClassName(String type, String name) {
-        return "$$_HibernateAccessorValueReader_%s_%s".formatted(type, name);
+        return "____HibernateAccessorValueReader_%s_%s".formatted(type, name);
     }
 
     private static String writerClassName(String type, String name) {
-        return "$$_HibernateAccessorValueWriter_%s_%s".formatted(type, name);
+        return "____HibernateAccessorValueWriter_%s_%s".formatted(type, name);
     }
 }

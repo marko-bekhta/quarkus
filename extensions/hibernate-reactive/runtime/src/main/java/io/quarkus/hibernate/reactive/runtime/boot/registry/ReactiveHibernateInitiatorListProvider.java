@@ -32,6 +32,7 @@ import io.quarkus.hibernate.orm.runtime.cdi.QuarkusManagedBeanRegistryInitiator;
 import io.quarkus.hibernate.orm.runtime.customized.QuarkusJndiServiceInitiator;
 import io.quarkus.hibernate.orm.runtime.customized.QuarkusStaticInitProxyFactoryFactory;
 import io.quarkus.hibernate.orm.runtime.service.InitialInitiatorListProvider;
+import io.quarkus.hibernate.orm.runtime.service.QuarkusHibernateAccessorFactoryResolverInitiator;
 import io.quarkus.hibernate.orm.runtime.service.QuarkusImportSqlCommandExtractorInitiator;
 import io.quarkus.hibernate.orm.runtime.service.QuarkusRegionFactoryInitiator;
 import io.quarkus.hibernate.orm.runtime.service.QuarkusStaticInitDialectFactoryInitiator;
@@ -126,6 +127,8 @@ public final class ReactiveHibernateInitiatorListProvider implements InitialInit
 
         // Custom Quarkus implementation: overrides the internal cache to leverage Caffeine
         serviceInitiators.add(QuarkusInternalCacheFactoryInitiator.INSTANCE);
+
+        serviceInitiators.add(QuarkusHibernateAccessorFactoryResolverInitiator.INSTANCE);
 
         serviceInitiators.trimToSize();
         return serviceInitiators;
