@@ -6,14 +6,15 @@ import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodReaderC
 
 import org.objectweb.asm.ClassWriter;
 
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
 import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.TypeMetadata;
 
 public class HibernateAccessorGetterImplementation {
 
-    private final String getter;
+    private final MethodMetadata getter;
     private final TypeMetadata outerClass;
 
-    public HibernateAccessorGetterImplementation(String getter, TypeMetadata outerClass) {
+    public HibernateAccessorGetterImplementation(MethodMetadata getter, TypeMetadata outerClass) {
         this.getter = getter;
         this.outerClass = outerClass;
     }
@@ -28,7 +29,7 @@ public class HibernateAccessorGetterImplementation {
     }
 
     public String getReaderName() {
-        return composeNestedName(outerClass.name(), methodReaderClassName(getter));
+        return composeNestedName(outerClass.name(), methodReaderClassName(getter.name()));
     }
 
 }

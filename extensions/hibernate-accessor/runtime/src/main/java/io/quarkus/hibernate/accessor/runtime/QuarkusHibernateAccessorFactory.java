@@ -1,31 +1,25 @@
 package io.quarkus.hibernate.accessor.runtime;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Member;
+import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
+
 import org.hibernate.accessor.HibernateAccessorFactory;
 import org.hibernate.accessor.HibernateAccessorInstantiator;
 import org.hibernate.accessor.HibernateAccessorValueReader;
 import org.hibernate.accessor.HibernateAccessorValueWriter;
 
-import java.lang.invoke.MethodHandles;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.accessorFqcn;
-import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldReaderClassName;
-import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldWriterClassName;
-import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodReaderClassName;
-import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodWriterClassName;
-
 public class QuarkusHibernateAccessorFactory implements HibernateAccessorFactory {
-    private static final HibernateAccessorFactory INSTANCE = new QuarkusHibernateAccessorFactory();
 
-    private static final Map<String, ? extends HibernateAccessorValueWriter> writerCache = new ConcurrentHashMap<>();
-    private static final Map<String, ? extends HibernateAccessorValueReader<?>> readerCache = new ConcurrentHashMap<>();
+    private final Map<String, HibernateAccessorFactory> delegates;
 
-    public static HibernateAccessorFactory instance(MethodHandles.Lookup lookup) {
-        return INSTANCE;
+    public QuarkusHibernateAccessorFactory(MethodHandles.Lookup lookup) {
+        delegates = new HashMap<>();
+        populateDelegates(delegates);
     }
 
     @Override
@@ -35,21 +29,39 @@ public class QuarkusHibernateAccessorFactory implements HibernateAccessorFactory
 
     @Override
     public HibernateAccessorValueReader<?> valueReader(Field field) {
-        return readerCache.get(accessorFqcn(field.getDeclaringClass().getName(), fieldReaderClassName(field.getName())));
+        HibernateAccessorFactory delegate = delegate(field);
+        return delegate.valueReader(field);
     }
 
     @Override
     public HibernateAccessorValueReader<?> valueReader(Method method) {
-        return readerCache.get(accessorFqcn(method.getDeclaringClass().getName(), methodReaderClassName(method.getName())));
+        HibernateAccessorFactory delegate = delegate(method);
+        return delegate.valueReader(method);
     }
 
     @Override
     public HibernateAccessorValueWriter valueWriter(Field field) {
-        return writerCache.get(accessorFqcn(field.getDeclaringClass().getName(), fieldWriterClassName(field.getName())));
+        HibernateAccessorFactory delegate = delegate(field);
+        return delegate.valueWriter(field);
     }
 
     @Override
     public HibernateAccessorValueWriter valueWriter(Method method) {
-        return writerCache.get(accessorFqcn(method.getDeclaringClass().getName(), methodWriterClassName(method.getName())));
+        HibernateAccessorFactory delegate = delegate(method);
+        return delegate.valueWriter(method);
     }
+
+    private HibernateAccessorFactory delegate(Member member) {
+        String packageName = member.getDeclaringClass().getPackageName();
+        HibernateAccessorFactory accessorFactory = delegates.get(packageName);
+        if (accessorFactory == null) {
+            throw new IllegalStateException("Unable to locate an access factory for package: " + packageName);
+        }
+        return accessorFactory;
+    }
+
+    private static void populateDelegates(Map<String, HibernateAccessorFactory> delegates) {
+        // generated at build time
+    }
+
 }
