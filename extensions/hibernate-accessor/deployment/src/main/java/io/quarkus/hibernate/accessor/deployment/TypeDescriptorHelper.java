@@ -111,7 +111,7 @@ public class TypeDescriptorHelper {
      *
      * @return Internal type name (e.g., "java/lang/String" or "java/lang/Integer")
      */
-    public static String getInternalTypeName(HibernateAccessorBuildItem.FieldMetadata field) {
+    public static String getInternalTypeName(HibernateAccessorBuildItem.MemberMetadata field) {
         if (field.isPrimitive()) {
             return TypeDescriptorHelper.getPrimitiveWrapper(field.descriptor());
         }

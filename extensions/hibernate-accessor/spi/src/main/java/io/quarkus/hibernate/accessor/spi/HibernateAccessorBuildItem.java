@@ -118,14 +118,28 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         }
     }
 
-    public record FieldMetadata(String name, String descriptor, boolean isPrimitive, String declaringClass) {
+    public interface MemberMetadata {
+        String name();
+
+        String descriptor();
+
+        boolean isPrimitive();
+
+        String declaringClass();
     }
 
-    public record MethodMetadata(String name, String descriptor, boolean isPrimitive, String declaringClass) {
+    public record FieldMetadata(String name, String descriptor, boolean isPrimitive,
+            String declaringClass) implements MemberMetadata {
+    }
+
+    public record MethodMetadata(String name, String descriptor, boolean isPrimitive,
+            String declaringClass) implements MemberMetadata {
     }
 
     public record TypeMetadata(String packageName, String name, String host) implements Comparable<TypeMetadata> {
-        private static final Comparator<TypeMetadata> COMPARATOR = Comparator.comparing(TypeMetadata::packageName).thenComparing(TypeMetadata::name);
+
+        private static final Comparator<TypeMetadata> COMPARATOR = Comparator.comparing(TypeMetadata::packageName)
+                .thenComparing(TypeMetadata::name);
 
         @Override
         public int compareTo(TypeMetadata o) {
