@@ -7,14 +7,11 @@ import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldWriterCl
 import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.FieldMetadata;
 import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.TypeMetadata;
 
-import org.hibernate.accessor.HibernateAccessorValueReader;
-import org.hibernate.accessor.HibernateAccessorValueWriter;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
 
-class HibernateAccessorFieldImplementation {
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
+
+class HibernateAccessorFieldImplementation extends HibernateAccessorMemberBaseImplementation {
 
     private final FieldMetadata field;
     private final TypeMetadata outerClass;
@@ -25,11 +22,11 @@ class HibernateAccessorFieldImplementation {
     }
 
     public byte[] generateReaderBytes() {
-        return InnerClassGenerator.generateReader(fqcnToName(getReaderName()), outerClass, field);
+        return generateReader(fqcnToName(getReaderName()), outerClass, field);
     }
 
     public byte[] generateWriterBytes() {
-        return InnerClassGenerator.generateWriter(fqcnToName(getWriterName()), outerClass, field);
+        return generateWriter(fqcnToName(getWriterName()), outerClass, field);
     }
 
     public String getReaderName() {
@@ -40,246 +37,15 @@ class HibernateAccessorFieldImplementation {
         return composeNestedName(outerClass.name(), fieldWriterClassName(field.name()));
     }
 
-    private static class InnerClassGenerator implements Opcodes {
+    @Override
+    protected void doActuallyGetValue(MethodVisitor mv, String outerClassName,
+            HibernateAccessorBuildItem.MemberMetadata member) {
+        mv.visitFieldInsn(GETFIELD, outerClassName, field.name(), field.descriptor());
+    }
 
-        private static final String WRITER_INTERFACE = fqcnToName(HibernateAccessorValueWriter.class.getName());
-        private static final String READER_INTERFACE = fqcnToName(HibernateAccessorValueReader.class.getName());
-
-        /**
-         * Generates bytecode for an accessor writer inner class.
-         *
-         * @param innerClassName Fully qualified internal name of inner class
-         * @param outerClass Fully qualified internal name of outer class
-         * @param field Field metadata
-         * @return Bytecode for the inner class
-         */
-        public static byte[] generateWriter(String innerClassName, TypeMetadata outerClass,
-                FieldMetadata field) {
-            String outerClassName = fqcnToName(outerClass.name());
-            ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
-
-            // Visit class header
-            cw.visit(
-                    V17,
-                    ACC_PUBLIC | ACC_SUPER,
-                    innerClassName,
-                    null,
-                    "java/lang/Object",
-                    new String[] { WRITER_INTERFACE });
-
-            // Declare this as inner class of outer class
-            String simpleInnerName = innerClassName.substring(outerClassName.length() + 1);
-            cw.visitInnerClass(
-                    innerClassName,
-                    outerClassName,
-                    simpleInnerName,
-                    ACC_PUBLIC | ACC_STATIC);
-
-            // Declare nest host so the inner class can access private fields of the outer class
-
-            cw.visitNestHost(fqcnToName(outerClass.host()));
-
-            // Generate INSTANCE static field
-            generateWriterInstanceField(cw, innerClassName);
-
-            // Generate constructor for reader
-            generateConstructor(cw);
-
-            // Generate set() method
-            generateWriterSetMethod(cw, outerClassName, field);
-
-            // Generate static initializer
-            generateWriterStaticInitializer(cw, innerClassName);
-
-            cw.visitEnd();
-            return cw.toByteArray();
-        }
-
-        /**
-         * Generates the public static final INSTANCE field.
-         */
-        private static void generateWriterInstanceField(ClassWriter cw, String innerClassName) {
-            FieldVisitor fv = cw.visitField(
-                    ACC_PUBLIC | ACC_STATIC | ACC_FINAL,
-                    "INSTANCE",
-                    "L" + innerClassName + ";",
-                    null,
-                    null);
-            fv.visitEnd();
-        }
-
-        /**
-         * Generates the set(Object, Object) method that assigns the value to the field.
-         */
-        private static void generateWriterSetMethod(ClassWriter cw, String outerClassName, FieldMetadata field) {
-            MethodVisitor mv = cw.visitMethod(
-                    ACC_PUBLIC,
-                    "set",
-                    "(Ljava/lang/Object;Ljava/lang/Object;)V",
-                    null,
-                    null);
-            mv.visitCode();
-
-            // Cast first parameter to owner class
-            // ((OwnerClass) var1)
-            mv.visitVarInsn(ALOAD, 1);
-            mv.visitTypeInsn(CHECKCAST, outerClassName);
-
-            // Cast and potentially unbox second parameter
-            mv.visitVarInsn(ALOAD, 2);
-
-            if (field.isPrimitive()) {
-                // For primitives: cast to wrapper, then unbox
-                String wrapperClass = TypeDescriptorHelper.getPrimitiveWrapper(field.descriptor());
-                String unboxMethod = TypeDescriptorHelper.getUnboxMethod(field.descriptor());
-                String unboxDescriptor = "()" + field.descriptor();
-
-                mv.visitTypeInsn(CHECKCAST, wrapperClass);
-                mv.visitMethodInsn(INVOKEVIRTUAL, wrapperClass, unboxMethod, unboxDescriptor, false);
-            } else {
-                // For objects: cast to target type
-                String targetType = TypeDescriptorHelper.getInternalTypeName(field);
-                mv.visitTypeInsn(CHECKCAST, targetType);
-            }
-
-            // Set the field value
-            // fieldName = (FieldType) var2
-            mv.visitFieldInsn(PUTFIELD, outerClassName, field.name(), field.descriptor());
-
-            mv.visitInsn(RETURN);
-            mv.visitMaxs(0, 0); // COMPUTE_FRAMES will calculate
-            mv.visitEnd();
-        }
-
-        /**
-         * Generates the static initializer that creates and assigns the INSTANCE.
-         */
-        private static void generateWriterStaticInitializer(ClassWriter cw, String innerClassName) {
-            MethodVisitor mv = cw.visitMethod(
-                    ACC_STATIC,
-                    "<clinit>",
-                    "()V",
-                    null,
-                    null);
-            mv.visitCode();
-
-            // INSTANCE = new InnerClass();
-            mv.visitTypeInsn(NEW, innerClassName);
-            mv.visitInsn(DUP);
-            mv.visitMethodInsn(INVOKESPECIAL, innerClassName, "<init>", "()V", false);
-            mv.visitFieldInsn(PUTSTATIC, innerClassName, "INSTANCE", "L" + innerClassName + ";");
-
-            mv.visitInsn(RETURN);
-            mv.visitMaxs(0, 0); // COMPUTE_FRAMES will calculate
-            mv.visitEnd();
-        }
-
-        /**
-         * Generates bytecode for an accessor reader inner class.
-         *
-         * @param innerClassName Fully qualified internal name of inner class
-         * @param outerClass Fully qualified internal name of outer class
-         * @param field Field metadata
-         * @return Bytecode for the inner class
-         */
-        public static byte[] generateReader(String innerClassName, TypeMetadata outerClass,
-                FieldMetadata field) {
-            String outerClassName = fqcnToName(outerClass.name());
-            ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
-
-            // Determine generic signature for the interface
-            String fieldTypeSignature;
-            if (field.isPrimitive()) {
-                // For primitives, use the wrapper type in the generic signature
-                String wrapperClass = TypeDescriptorHelper.getPrimitiveWrapper(field.descriptor());
-                fieldTypeSignature = "L" + wrapperClass + ";";
-            } else {
-                fieldTypeSignature = field.descriptor();
-            }
-
-            // Generic signature: implements HibernateAccessorValueReader<FieldType>
-            String classSignature = "Ljava/lang/Object;L" + READER_INTERFACE + "<" + fieldTypeSignature + ">;";
-
-            // Visit class header
-            cw.visit(
-                    V17,
-                    ACC_PUBLIC | ACC_SUPER,
-                    innerClassName,
-                    classSignature,
-                    "java/lang/Object",
-                    new String[] { READER_INTERFACE });
-
-            // Declare this as inner class of outer class
-            String simpleInnerName = innerClassName.substring(outerClassName.length() + 1);
-            cw.visitInnerClass(
-                    innerClassName,
-                    outerClassName,
-                    simpleInnerName,
-                    ACC_PUBLIC | ACC_STATIC);
-
-            // Declare nest host so the inner class can access private fields of the outer class
-            cw.visitNestHost(fqcnToName(outerClass.host()));
-
-            // Generate INSTANCE static field
-            generateWriterInstanceField(cw, innerClassName);
-
-            // Generate constructor for reader
-            generateConstructor(cw);
-
-            // Generate get() method
-            generateGetMethod(cw, outerClassName, field);
-
-            // Generate static initializer
-            generateWriterStaticInitializer(cw, innerClassName);
-
-            cw.visitEnd();
-            return cw.toByteArray();
-        }
-
-        /**
-         * Generates the constructor;
-         */
-        private static void generateConstructor(ClassWriter cw) {
-            MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
-            mv.visitCode();
-            mv.visitVarInsn(ALOAD, 0);
-            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
-            mv.visitInsn(RETURN);
-            mv.visitMaxs(0, 0); // COMPUTE_FRAMES will calculate
-            mv.visitEnd();
-        }
-
-        /**
-         * Generates the get(Object) method that reads the field value.
-         */
-        private static void generateGetMethod(ClassWriter cw, String outerClassName, FieldMetadata field) {
-            MethodVisitor mv = cw.visitMethod(
-                    ACC_PUBLIC,
-                    "get",
-                    "(Ljava/lang/Object;)Ljava/lang/Object;",
-                    null,
-                    null);
-            mv.visitCode();
-
-            // Cast parameter to owner class
-            // ((OwnerClass) var1)
-            mv.visitVarInsn(ALOAD, 1);
-            mv.visitTypeInsn(CHECKCAST, outerClassName);
-
-            // Get the field value
-            mv.visitFieldInsn(GETFIELD, outerClassName, field.name(), field.descriptor());
-
-            // Box primitive if necessary
-            if (field.isPrimitive()) {
-                String wrapperClass = TypeDescriptorHelper.getPrimitiveWrapper(field.descriptor());
-                String valueOfDescriptor = "(" + field.descriptor() + ")L" + wrapperClass + ";";
-                mv.visitMethodInsn(INVOKESTATIC, wrapperClass, "valueOf", valueOfDescriptor, false);
-            }
-
-            // Return the value
-            mv.visitInsn(ARETURN);
-            mv.visitMaxs(0, 0); // COMPUTE_FRAMES will calculate
-            mv.visitEnd();
-        }
+    @Override
+    protected void doActuallySetValue(MethodVisitor mv, String outerClassName,
+            HibernateAccessorBuildItem.MemberMetadata member) {
+        mv.visitFieldInsn(PUTFIELD, outerClassName, field.name(), field.descriptor());
     }
 }
