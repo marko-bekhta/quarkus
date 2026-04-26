@@ -4,12 +4,13 @@ import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerati
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodReaderClassName;
 
-import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
 
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
 import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
 import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.TypeMetadata;
 
-public class HibernateAccessorGetterImplementation {
+public class HibernateAccessorGetterImplementation extends HibernateAccessorMemberBaseImplementation {
 
     private final MethodMetadata getter;
     private final TypeMetadata outerClass;
@@ -20,16 +21,23 @@ public class HibernateAccessorGetterImplementation {
     }
 
     public byte[] generateReaderBytes() {
-        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
-        // TODO: Andreeeeeeeeeeeeeeeeeeeeea has the impl ;)
-
-        cw.visitNestHost(fqcnToName(outerClass.name()));
-        cw.visitEnd();
-        return cw.toByteArray();
+        return generateReader(fqcnToName(getReaderName()), outerClass, getter);
     }
 
     public String getReaderName() {
         return composeNestedName(outerClass.name(), methodReaderClassName(getter.name()));
     }
 
+    @Override
+    protected void doActuallyGetValue(MethodVisitor mv, String outerClassName,
+            HibernateAccessorBuildItem.MemberMetadata member) {
+        String methodDescriptor = "()" + getter.descriptor();
+        mv.visitMethodInsn(INVOKEVIRTUAL, outerClassName, getter.name(), methodDescriptor, false);
+    }
+
+    @Override
+    protected void doActuallySetValue(MethodVisitor mv, String outerClassName,
+            HibernateAccessorBuildItem.MemberMetadata member) {
+        throw new UnsupportedOperationException("Cannot use getter to set values!");
+    }
 }
