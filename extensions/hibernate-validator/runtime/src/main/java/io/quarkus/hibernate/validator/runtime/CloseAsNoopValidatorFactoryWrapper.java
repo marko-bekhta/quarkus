@@ -9,6 +9,7 @@ import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.TraversableResolver;
 import jakarta.validation.Validator;
 
+import org.hibernate.accessor.HibernateAccessorFactory;
 import org.hibernate.validator.HibernateValidatorContext;
 import org.hibernate.validator.HibernateValidatorFactory;
 import org.hibernate.validator.spi.nodenameprovider.PropertyNodeNameProvider;
@@ -79,6 +80,11 @@ class CloseAsNoopValidatorFactoryWrapper implements HibernateValidatorFactory {
     @Override
     public GetterPropertySelectionStrategy getGetterPropertySelectionStrategy() {
         return validatorFactory.getGetterPropertySelectionStrategy();
+    }
+
+    @Override
+    public HibernateAccessorFactory getAccessorFactory() {
+        return validatorFactory.getAccessorFactory();
     }
 
     @Override

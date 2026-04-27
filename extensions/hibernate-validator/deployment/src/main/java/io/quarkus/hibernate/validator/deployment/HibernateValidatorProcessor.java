@@ -52,6 +52,7 @@ import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.ClassType;
 import org.jboss.jandex.CompositeIndex;
 import org.jboss.jandex.DotName;
+import org.jboss.jandex.FieldInfo;
 import org.jboss.jandex.IndexView;
 import org.jboss.jandex.Indexer;
 import org.jboss.jandex.MethodInfo;
@@ -96,8 +97,6 @@ import io.quarkus.deployment.builditem.ShutdownContextBuildItem;
 import io.quarkus.deployment.builditem.StaticInitConfigBuilderBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBundleBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
-import io.quarkus.deployment.builditem.nativeimage.ReflectiveFieldBuildItem;
-import io.quarkus.deployment.builditem.nativeimage.ReflectiveMethodBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.RuntimeInitializedClassBuildItem;
 import io.quarkus.deployment.logging.LogCleanupFilterBuildItem;
 import io.quarkus.deployment.pkg.steps.NativeOrNativeSourcesBuild;
@@ -110,6 +109,7 @@ import io.quarkus.gizmo2.ParamVar;
 import io.quarkus.gizmo2.StaticFieldVar;
 import io.quarkus.gizmo2.desc.ConstructorDesc;
 import io.quarkus.gizmo2.desc.MethodDesc;
+import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
 import io.quarkus.hibernate.validator.ValidatorFactoryCustomizer;
 import io.quarkus.hibernate.validator.runtime.DisableLoggingFeature;
 import io.quarkus.hibernate.validator.runtime.HibernateBeanValidationConfigValidator;
@@ -462,8 +462,7 @@ class HibernateValidatorProcessor {
     public void build(
             HibernateValidatorRecorder recorder, RecorderContext recorderContext,
             BeanValidationAnnotationsBuildItem beanValidationAnnotations,
-            BuildProducer<ReflectiveFieldBuildItem> reflectiveFields,
-            BuildProducer<ReflectiveMethodBuildItem> reflectiveMethods,
+            BuildProducer<HibernateAccessorBuildItem> accessorBuildItem,
             BuildProducer<AnnotationsTransformerBuildItem> annotationsTransformers,
             BuildProducer<SyntheticBeanBuildItem> syntheticBeans,
             BeanArchiveIndexBuildItem beanArchiveIndexBuildItem,
@@ -507,19 +506,29 @@ class HibernateValidatorProcessor {
 
             for (AnnotationInstance annotation : annotationInstances) {
                 if (annotation.target().kind() == AnnotationTarget.Kind.FIELD) {
-                    contributeClass(classNamesToBeValidated, indexView, annotation.target().asField().declaringClass());
-                    reflectiveFields.produce(new ReflectiveFieldBuildItem(getClass().getName(), annotation.target().asField()));
+                    final FieldInfo field = annotation.target().asField();
+                    contributeClass(classNamesToBeValidated, indexView, field.declaringClass());
+                    // reflectiveFields.produce(new ReflectiveFieldBuildItem(getClass().getName(), field));
                     contributeClassMarkedForCascadingValidation(classNamesToBeValidated, indexView, consideredAnnotation,
-                            annotation.target().asField().type());
+                            field.type());
+                    accessorBuildItem.produce(new HibernateAccessorBuildItem.Builder(field.declaringClass(), indexView)
+                            .addField(field)
+                            .build());
                 } else if (annotation.target().kind() == AnnotationTarget.Kind.METHOD) {
-                    contributeClass(classNamesToBeValidated, indexView, annotation.target().asMethod().declaringClass());
+                    final MethodInfo method = annotation.target().asMethod();
+                    contributeClass(classNamesToBeValidated, indexView, method.declaringClass());
                     // we need to register the method for reflection as it could be a getter
-                    reflectiveMethods
-                            .produce(new ReflectiveMethodBuildItem(getClass().getName(), annotation.target().asMethod()));
+                    //                    reflectiveMethods
+                    //                            .produce(new ReflectiveMethodBuildItem(getClass().getName(), method));
                     contributeClassMarkedForCascadingValidation(classNamesToBeValidated, indexView, consideredAnnotation,
-                            annotation.target().asMethod().returnType());
+                            method.returnType());
                     contributeMethodsWithInheritedValidation(methodsWithInheritedValidation, indexView,
-                            annotation.target().asMethod());
+                            method);
+                    if (method.parametersCount() == 0 && method.returnType().kind() != Type.Kind.VOID) {
+                        accessorBuildItem.produce(new HibernateAccessorBuildItem.Builder(method.declaringClass(), indexView)
+                                .addGetter(method)
+                                .build());
+                    }
                 } else if (annotation.target().kind() == AnnotationTarget.Kind.METHOD_PARAMETER) {
                     contributeClass(classNamesToBeValidated, indexView,
                             annotation.target().asMethodParameter().method().declaringClass());
@@ -538,7 +547,11 @@ class HibernateValidatorProcessor {
                     AnnotationTarget enclosingTarget = annotation.target().asType().enclosingTarget();
                     if (enclosingTarget.kind() == AnnotationTarget.Kind.FIELD) {
                         contributeClass(classNamesToBeValidated, indexView, enclosingTarget.asField().declaringClass());
-                        reflectiveFields.produce(new ReflectiveFieldBuildItem(getClass().getName(), enclosingTarget.asField()));
+                        // reflectiveFields.produce(new ReflectiveFieldBuildItem(getClass().getName(), enclosingTarget.asField()));
+                        accessorBuildItem.produce(
+                                new HibernateAccessorBuildItem.Builder(enclosingTarget.asField().declaringClass(), indexView)
+                                        .addField(enclosingTarget.asField())
+                                        .build());
                         if (annotation.target().asType().target() != null) {
                             contributeClassMarkedForCascadingValidation(classNamesToBeValidated, indexView,
                                     consideredAnnotation,
@@ -546,8 +559,16 @@ class HibernateValidatorProcessor {
                         }
                     } else if (enclosingTarget.kind() == AnnotationTarget.Kind.METHOD) {
                         contributeClass(classNamesToBeValidated, indexView, enclosingTarget.asMethod().declaringClass());
-                        reflectiveMethods
-                                .produce(new ReflectiveMethodBuildItem(getClass().getName(), enclosingTarget.asMethod()));
+                        //                        reflectiveMethods
+                        //                                .produce(new ReflectiveMethodBuildItem(getClass().getName(), enclosingTarget.asMethod()));
+                        if (enclosingTarget.asMethod().parametersCount() == 0
+                                && enclosingTarget.asMethod().returnType().kind() != Type.Kind.VOID) {
+                            accessorBuildItem
+                                    .produce(new HibernateAccessorBuildItem.Builder(enclosingTarget.asMethod().declaringClass(),
+                                            indexView)
+                                            .addGetter(enclosingTarget.asMethod())
+                                            .build());
+                        }
                         if (annotation.target().asType().target() != null) {
                             contributeClassMarkedForCascadingValidation(classNamesToBeValidated, indexView,
                                     consideredAnnotation,
