@@ -56,7 +56,7 @@ class HibernateAccessorFactoryTransformationFunction implements BiFunction<Strin
 
             @Override
             public void visitCode() {
-                mv.visitCode();
+                // mv.visitCode();
 
                 for (String pkg : packages) {
                     // delegates.put("pkg.name", pkg.____HibernateAccessorFactory.INSTANCE);
