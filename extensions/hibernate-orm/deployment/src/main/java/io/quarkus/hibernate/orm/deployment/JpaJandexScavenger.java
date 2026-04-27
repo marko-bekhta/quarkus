@@ -1,6 +1,5 @@
 package io.quarkus.hibernate.orm.deployment;
 
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -152,17 +151,6 @@ public final class JpaJandexScavenger {
             forReflection.add(javaType.toString());
         }
         reflectiveClass.produce(ReflectiveClassBuildItem.builder(forReflection).constructors().build());
-
-        for (String managedClassName : managedClassNames) {
-            ClassInfo accessorClass = index.getClassByName(managedClassName);
-            HibernateAccessorBuildItem.Builder builder = new HibernateAccessorBuildItem.Builder(accessorClass, index);
-            for (FieldInfo field : accessorClass.fields()) {
-                if (!Modifier.isStatic(field.flags())) {
-                    builder.addField(field);
-                }
-            }
-            accessorBuildItemProducer.produce(builder.build());
-        }
 
         return new JpaModelBuildItem(collector.packages, collector.entityTypes, managedClassNames,
                 collector.potentialCdiBeanTypes, collector.xmlMappingsByPU);

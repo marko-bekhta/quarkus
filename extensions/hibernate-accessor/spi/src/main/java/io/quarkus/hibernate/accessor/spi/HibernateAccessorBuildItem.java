@@ -1,5 +1,6 @@
 package io.quarkus.hibernate.accessor.spi;
 
+import java.lang.reflect.Modifier;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
@@ -109,6 +110,28 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             Type valueType = setter.parameterType(0);
             this.setters.add(new MethodMetadata(setter.name(), valueType.descriptor(), valueType.kind() == Type.Kind.PRIMITIVE,
                     setter.declaringClass().name().toString()));
+
+            return this;
+        }
+
+        public Builder all(ClassInfo classToAccess) {
+            for (FieldInfo field : classToAccess.fields()) {
+                if (!Modifier.isStatic(field.flags())) {
+                    addField(field);
+                }
+            }
+
+            for (MethodInfo method : classToAccess.methods()) {
+                if (!Modifier.isStatic(method.flags())) {
+                    if (method.parametersCount() == 0
+                            && method.returnType().kind() != Type.Kind.VOID) {
+                        addGetter(method);
+                    }
+                    if (method.parametersCount() == 1) {
+                        addSetter(method);
+                    }
+                }
+            }
 
             return this;
         }
