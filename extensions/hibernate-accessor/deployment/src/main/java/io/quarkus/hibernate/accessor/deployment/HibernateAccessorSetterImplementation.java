@@ -25,7 +25,8 @@ public class HibernateAccessorSetterImplementation extends HibernateAccessorMemb
     }
 
     public String getWriterName() {
-        return composeNestedName(outerClass.name(), methodWriterClassName(setter.name()));
+        return composeNestedName(outerClass.host(),
+                methodWriterClassName(setter.declaringClass(), outerClass.host(), setter.name()));
     }
 
     @Override

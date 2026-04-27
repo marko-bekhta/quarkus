@@ -128,7 +128,7 @@ class HibernateAccessorProcessor {
                 if (processedMembers.add(getter)) {
                     packageFactoryImplementation.addReader(getter);
                     transformer.produce(new BytecodeTransformerBuildItem.Builder()
-                            .setClassToTransform(accessItem.getType().name())
+                            .setClassToTransform(accessItem.getType().host())
                             .setCacheable(true)
                             .setPriority(-2)
                             .setVisitorFunction(new HibernateAccessorGetterFunction(getter))
@@ -145,7 +145,7 @@ class HibernateAccessorProcessor {
                 if (processedMembers.add(setter)) {
                     packageFactoryImplementation.addWriter(setter);
                     transformer.produce(new BytecodeTransformerBuildItem.Builder()
-                            .setClassToTransform(accessItem.getType().name())
+                            .setClassToTransform(accessItem.getType().host())
                             .setCacheable(true)
                             .setPriority(-2)
                             .setVisitorFunction(new HibernateAccessorSetterFunction(setter))

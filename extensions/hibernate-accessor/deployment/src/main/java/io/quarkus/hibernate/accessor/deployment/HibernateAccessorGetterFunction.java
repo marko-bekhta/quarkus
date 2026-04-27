@@ -38,7 +38,7 @@ class HibernateAccessorGetterFunction implements BiFunction<String, ClassVisitor
         @Override
         public void visitEnd() {
             String outerName = fqcnToName(outerClassName);
-            String simpleName = methodReaderClassName(getter.name());
+            String simpleName = methodReaderClassName(getter.declaringClass(), outerClassName, getter.name());
             String internalName = accessorFqcn(outerName, simpleName);
             cv.visitInnerClass(
                     internalName,

@@ -38,6 +38,7 @@ import io.quarkus.arc.Arc;
 import io.quarkus.arc.InstanceHandle;
 import io.quarkus.arc.SyntheticCreationalContext;
 import io.quarkus.arc.runtime.BeanContainer;
+import io.quarkus.hibernate.accessor.runtime.QuarkusClassLoadingHibernateAccessorFactory;
 import io.quarkus.hibernate.validator.ValidatorFactoryCustomizer;
 import io.quarkus.hibernate.validator.runtime.clockprovider.RuntimeReinitializedDefaultClockProvider;
 import io.quarkus.hibernate.validator.runtime.jaxrs.ResteasyConfigSupport;
@@ -215,6 +216,8 @@ public class HibernateValidatorRecorder {
                 for (ValidatorFactoryCustomizer validatorFactoryCustomizer : validatorFactoryCustomizers) {
                     validatorFactoryCustomizer.customize(configuration);
                 }
+
+                configuration.accessorFactory(QuarkusClassLoadingHibernateAccessorFactory.INSTANCE);
 
                 ValidatorFactory validatorFactory = configuration.buildValidatorFactory();
 

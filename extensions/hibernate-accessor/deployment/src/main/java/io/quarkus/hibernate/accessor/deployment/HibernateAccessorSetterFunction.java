@@ -38,7 +38,7 @@ class HibernateAccessorSetterFunction implements BiFunction<String, ClassVisitor
         @Override
         public void visitEnd() {
             String outerName = fqcnToName(outerClassName);
-            String simpleName = methodWriterClassName(setter.name());
+            String simpleName = methodWriterClassName(setter.declaringClass(), outerClassName, setter.name());
             String internalName = accessorFqcn(outerName, simpleName);
             cv.visitInnerClass(
                     internalName,

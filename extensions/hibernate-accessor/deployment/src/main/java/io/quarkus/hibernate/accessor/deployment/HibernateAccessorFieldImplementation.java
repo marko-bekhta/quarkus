@@ -30,11 +30,13 @@ class HibernateAccessorFieldImplementation extends HibernateAccessorMemberBaseIm
     }
 
     public String getReaderName() {
-        return composeNestedName(outerClass.name(), fieldReaderClassName(field.name()));
+        return composeNestedName(outerClass.host(),
+                fieldReaderClassName(field.declaringClass(), outerClass.host(), field.name()));
     }
 
     public String getWriterName() {
-        return composeNestedName(outerClass.name(), fieldWriterClassName(field.name()));
+        return composeNestedName(outerClass.host(),
+                fieldWriterClassName(field.declaringClass(), outerClass.host(), field.name()));
     }
 
     @Override
