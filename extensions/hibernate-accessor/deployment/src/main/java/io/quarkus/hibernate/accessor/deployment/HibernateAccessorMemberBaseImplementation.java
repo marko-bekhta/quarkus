@@ -10,6 +10,9 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+
+import io.quarkus.deployment.util.AsmUtil;
 
 abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
 
@@ -78,8 +81,7 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
         String fieldTypeSignature;
         if (member.isPrimitive()) {
             // For primitives, use the wrapper type in the generic signature
-            String wrapperClass = TypeDescriptorHelper.getPrimitiveWrapper(member.descriptor());
-            fieldTypeSignature = "L" + wrapperClass + ";";
+            fieldTypeSignature = AsmUtil.autobox(Type.getType(member.descriptor())).getDescriptor();
         } else {
             fieldTypeSignature = member.descriptor();
         }
@@ -146,9 +148,10 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
 
         // Box primitive if necessary
         if (member.isPrimitive()) {
-            String wrapperClass = TypeDescriptorHelper.getPrimitiveWrapper(member.descriptor());
-            String valueOfDescriptor = "(" + member.descriptor() + ")L" + wrapperClass + ";";
-            mv.visitMethodInsn(INVOKESTATIC, wrapperClass, "valueOf", valueOfDescriptor, false);
+            Type primitiveType = Type.getType(member.descriptor());
+            Type wrapperType = AsmUtil.autobox(primitiveType);
+            mv.visitMethodInsn(INVOKESTATIC, wrapperType.getInternalName(), "valueOf",
+                    Type.getMethodDescriptor(wrapperType, primitiveType), false);
         }
 
         // Return the value
@@ -179,15 +182,10 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
 
         if (member.isPrimitive()) {
             // For primitives: cast to wrapper, then unbox
-            String wrapperClass = TypeDescriptorHelper.getPrimitiveWrapper(member.descriptor());
-            String unboxMethod = TypeDescriptorHelper.getUnboxMethod(member.descriptor());
-            String unboxDescriptor = "()" + member.descriptor();
-
-            mv.visitTypeInsn(CHECKCAST, wrapperClass);
-            mv.visitMethodInsn(INVOKEVIRTUAL, wrapperClass, unboxMethod, unboxDescriptor, false);
+            AsmUtil.unboxIfRequired(mv, Type.getType(member.descriptor()));
         } else {
             // For objects: cast to target type
-            String targetType = TypeDescriptorHelper.getInternalTypeName(member);
+            String targetType = Type.getType(member.descriptor()).getInternalName();
             mv.visitTypeInsn(CHECKCAST, targetType);
         }
 
