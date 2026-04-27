@@ -25,7 +25,8 @@ public class HibernateAccessorGetterImplementation extends HibernateAccessorMemb
     }
 
     public String getReaderName() {
-        return composeNestedName(outerClass.name(), methodReaderClassName(getter.name()));
+        return composeNestedName(outerClass.host(),
+                methodReaderClassName(getter.declaringClass(), outerClass.host(), getter.name()));
     }
 
     @Override

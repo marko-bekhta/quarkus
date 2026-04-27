@@ -22,24 +22,26 @@ class HibernateAccessorFieldFunction implements BiFunction<String, ClassVisitor,
     }
 
     @Override
-    public ClassVisitor apply(String className, ClassVisitor classVisitor) {
-        return new FieldAccessorsClassVisitor(classVisitor, field.name(), className);
+    public ClassVisitor apply(String hostClassName, ClassVisitor classVisitor) {
+        return new FieldAccessorsClassVisitor(classVisitor, field.name(), field.declaringClass(), hostClassName);
     }
 
     private static class FieldAccessorsClassVisitor extends ClassVisitor {
         private final String field;
-        private final String outerClassName;
+        private final String hostClassName;
+        private final String declaringClass;
 
-        protected FieldAccessorsClassVisitor(ClassVisitor visitor, String field, String outerClassName) {
+        protected FieldAccessorsClassVisitor(ClassVisitor visitor, String field, String declaringClass, String hostClassName) {
             super(AsmUtil.ASM_API_VERSION, visitor);
             this.field = field;
-            this.outerClassName = outerClassName;
+            this.declaringClass = declaringClass;
+            this.hostClassName = hostClassName;
         }
 
         @Override
         public void visitEnd() {
-            String outerName = fqcnToName(outerClassName);
-            String simpleName = fieldReaderClassName(field);
+            String outerName = fqcnToName(hostClassName);
+            String simpleName = fieldReaderClassName(declaringClass, hostClassName, field);
             String internalName = accessorFqcn(outerName, simpleName);
             cv.visitInnerClass(
                     internalName,
@@ -48,7 +50,7 @@ class HibernateAccessorFieldFunction implements BiFunction<String, ClassVisitor,
                     Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC);
             cv.visitNestMember(internalName);
 
-            simpleName = fieldWriterClassName(field);
+            simpleName = fieldWriterClassName(declaringClass, hostClassName, field);
             internalName = accessorFqcn(outerName, simpleName);
             cv.visitInnerClass(
                     internalName,
