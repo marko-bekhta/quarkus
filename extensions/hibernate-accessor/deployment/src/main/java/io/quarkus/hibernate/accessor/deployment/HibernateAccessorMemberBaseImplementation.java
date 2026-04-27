@@ -26,7 +26,6 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
      */
     protected byte[] generateWriter(String innerClassName, TypeMetadata outerClass,
             MemberMetadata member) {
-        String outerClassName = fqcnToName(outerClass.name());
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 
         // Visit class header
@@ -39,21 +38,22 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
                 new String[] { WRITER_INTERFACE });
 
         // Declare this as inner class of outer class
-        String simpleInnerName = innerClassName.substring(outerClassName.length() + 1);
+        String simpleInnerName = innerClassName.substring(outerClass.name().length() + 1);
+        String nestHost = fqcnToName(outerClass.host());
         cw.visitInnerClass(
                 innerClassName,
-                outerClassName,
+                nestHost,
                 simpleInnerName,
                 ACC_PUBLIC | ACC_STATIC);
 
         // Declare nest host so the inner class can access private fields of the outer class
-        cw.visitNestHost(fqcnToName(outerClass.host()));
+        cw.visitNestHost(nestHost);
 
         generateInstanceField(cw, innerClassName);
         generateConstructor(cw);
 
         // Generate set() method
-        generateWriterSetMethod(cw, outerClassName, member);
+        generateWriterSetMethod(cw, fqcnToName(outerClass.name()), member);
 
         // Generate static initializer
         generateStaticInitializer(cw, innerClassName);
@@ -72,7 +72,6 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
      */
     protected byte[] generateReader(String innerClassName, TypeMetadata outerClass,
             MemberMetadata member) {
-        String outerClassName = fqcnToName(outerClass.name());
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 
         // Determine generic signature for the interface
@@ -98,15 +97,16 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
                 new String[] { READER_INTERFACE });
 
         // Declare this as inner class of outer class
-        String simpleInnerName = innerClassName.substring(outerClassName.length() + 1);
+        String simpleInnerName = innerClassName.substring(outerClass.name().length() + 1);
+        String nestHost = fqcnToName(outerClass.host());
         cw.visitInnerClass(
                 innerClassName,
-                outerClassName,
+                nestHost,
                 simpleInnerName,
                 ACC_PUBLIC | ACC_STATIC);
 
         // Declare nest host so the inner class can access private fields of the outer class
-        cw.visitNestHost(fqcnToName(outerClass.host()));
+        cw.visitNestHost(nestHost);
 
         // Generate INSTANCE static field
         generateInstanceField(cw, innerClassName);
@@ -115,7 +115,7 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
         generateConstructor(cw);
 
         // Generate get() method
-        generateGetMethod(cw, outerClassName, member);
+        generateGetMethod(cw, fqcnToName(outerClass.name()), member);
 
         // Generate static initializer
         generateStaticInitializer(cw, innerClassName);

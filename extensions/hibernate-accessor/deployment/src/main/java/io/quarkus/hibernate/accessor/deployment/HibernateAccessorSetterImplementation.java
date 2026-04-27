@@ -10,7 +10,7 @@ import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
 import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
 import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.TypeMetadata;
 
-public class HibernateAccessorSetterImplementation extends HibernateAccessorMemberBaseImplementation {
+class HibernateAccessorSetterImplementation extends HibernateAccessorMemberBaseImplementation {
 
     private final MethodMetadata setter;
     private final TypeMetadata outerClass;
