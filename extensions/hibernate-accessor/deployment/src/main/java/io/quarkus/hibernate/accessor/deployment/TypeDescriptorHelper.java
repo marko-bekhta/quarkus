@@ -33,16 +33,6 @@ public class TypeDescriptorHelper {
     }
 
     /**
-     * Checks if a descriptor represents a primitive type.
-     *
-     * @param descriptor Type descriptor
-     * @return true if primitive, false otherwise
-     */
-    public static boolean isPrimitive(String descriptor) {
-        return descriptor != null && descriptor.length() == 1 && PRIMITIVE_TO_WRAPPER.containsKey(descriptor);
-    }
-
-    /**
      * Gets the wrapper class internal name for a primitive descriptor.
      *
      * @param primitiveDescriptor Primitive type descriptor (e.g., "I" for int)
@@ -68,40 +58,6 @@ public class TypeDescriptorHelper {
             throw new IllegalArgumentException("Not a primitive descriptor: " + primitiveDescriptor);
         }
         return method;
-    }
-
-    /**
-     * Extracts the internal type name from an object descriptor.
-     *
-     * @param descriptor Type descriptor (e.g., "Ljava/lang/String;")
-     * @return Internal type name (e.g., "java/lang/String")
-     */
-    public static String getInternalTypeName(String descriptor) {
-        if (descriptor.startsWith("L") && descriptor.endsWith(";")) {
-            return descriptor.substring(1, descriptor.length() - 1);
-        }
-        return descriptor;
-    }
-
-    /**
-     * Converts an internal class name to a fully qualified dot-separated name.
-     *
-     * @param internalName Internal name (e.g., "org/hibernate/test/Book")
-     * @return Fully qualified name (e.g., "org.hibernate.test.Book")
-     */
-    public static String toQualifiedName(String internalName) {
-        return internalName.replace('/', '.');
-    }
-
-    /**
-     * Gets the simple class name from an internal name.
-     *
-     * @param internalName Internal name (e.g., "org/hibernate/test/Book")
-     * @return Simple class name (e.g., "Book")
-     */
-    public static String getSimpleClassName(String internalName) {
-        int lastSlash = internalName.lastIndexOf('/');
-        return lastSlash >= 0 ? internalName.substring(lastSlash + 1) : internalName;
     }
 
     /**

@@ -116,7 +116,7 @@ class HibernateAccessorPackageFactoryImplementation {
 
                     for (FieldMetadata f : fields) {
                         ClassDesc accessorClass = ClassDesc
-                                .of(accessorFqcn(f.declaringClass(), fieldReaderClassName(f.name())));
+                                .of(accessorFqcn(f.host(), fieldReaderClassName(f.declaringClass(), f.host(), f.name())));
                         bc.invokeInterface(
                                 mapPut,
                                 this_.field(readers),
@@ -133,7 +133,7 @@ class HibernateAccessorPackageFactoryImplementation {
 
                     for (MethodMetadata m : methodReaders) {
                         ClassDesc accessorClass = ClassDesc
-                                .of(accessorFqcn(m.declaringClass(), methodReaderClassName(m.name())));
+                                .of(accessorFqcn(m.host(), methodReaderClassName(m.declaringClass(), m.host(), m.name())));
                         bc.invokeInterface(
                                 mapPut,
                                 this_.field(readers),
@@ -142,7 +142,7 @@ class HibernateAccessorPackageFactoryImplementation {
                     }
                     for (MethodMetadata m : methodWriters) {
                         ClassDesc accessorClass = ClassDesc
-                                .of(accessorFqcn(m.declaringClass(), methodWriterClassName(m.name())));
+                                .of(accessorFqcn(m.host(), methodWriterClassName(m.declaringClass(), m.host(), m.name())));
                         bc.invokeInterface(
                                 mapPut,
                                 this_.field(writers),

@@ -87,7 +87,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type fieldType = field.type();
             this.fields.add(new FieldMetadata(field.name(), fieldType.descriptor(), fieldType.kind() == Type.Kind.PRIMITIVE,
-                    field.declaringClass().name().toString()));
+                    field.declaringClass().name().toString(), host));
 
             return this;
         }
@@ -98,7 +98,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type returnType = getter.returnType();
             this.getters.add(new MethodMetadata(getter.name(), returnType.descriptor(),
-                    returnType.kind() == Type.Kind.PRIMITIVE, getter.declaringClass().name().toString()));
+                    returnType.kind() == Type.Kind.PRIMITIVE, getter.declaringClass().name().toString(), host));
 
             return this;
         }
@@ -109,7 +109,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type valueType = setter.parameterType(0);
             this.setters.add(new MethodMetadata(setter.name(), valueType.descriptor(), valueType.kind() == Type.Kind.PRIMITIVE,
-                    setter.declaringClass().name().toString()));
+                    setter.declaringClass().name().toString(), host));
 
             return this;
         }
@@ -149,14 +149,16 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         boolean isPrimitive();
 
         String declaringClass();
+
+        String host();
     }
 
     public record FieldMetadata(String name, String descriptor, boolean isPrimitive,
-            String declaringClass) implements MemberMetadata {
+            String declaringClass, String host) implements MemberMetadata {
     }
 
     public record MethodMetadata(String name, String descriptor, boolean isPrimitive,
-            String declaringClass) implements MemberMetadata {
+            String declaringClass, String host) implements MemberMetadata {
     }
 
     public record TypeMetadata(String packageName, String name, String host) implements Comparable<TypeMetadata> {

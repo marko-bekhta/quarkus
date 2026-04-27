@@ -508,7 +508,6 @@ class HibernateValidatorProcessor {
                 if (annotation.target().kind() == AnnotationTarget.Kind.FIELD) {
                     final FieldInfo field = annotation.target().asField();
                     contributeClass(classNamesToBeValidated, indexView, field.declaringClass());
-                    // reflectiveFields.produce(new ReflectiveFieldBuildItem(getClass().getName(), field));
                     contributeClassMarkedForCascadingValidation(classNamesToBeValidated, indexView, consideredAnnotation,
                             field.type());
                     accessorBuildItem.produce(new HibernateAccessorBuildItem.Builder(field.declaringClass(), indexView)
@@ -517,13 +516,11 @@ class HibernateValidatorProcessor {
                 } else if (annotation.target().kind() == AnnotationTarget.Kind.METHOD) {
                     final MethodInfo method = annotation.target().asMethod();
                     contributeClass(classNamesToBeValidated, indexView, method.declaringClass());
-                    // we need to register the method for reflection as it could be a getter
-                    //                    reflectiveMethods
-                    //                            .produce(new ReflectiveMethodBuildItem(getClass().getName(), method));
                     contributeClassMarkedForCascadingValidation(classNamesToBeValidated, indexView, consideredAnnotation,
                             method.returnType());
                     contributeMethodsWithInheritedValidation(methodsWithInheritedValidation, indexView,
                             method);
+                    // we need to register the method for reflection as it could be a getter
                     if (method.parametersCount() == 0 && method.returnType().kind() != Type.Kind.VOID) {
                         accessorBuildItem.produce(new HibernateAccessorBuildItem.Builder(method.declaringClass(), indexView)
                                 .addGetter(method)
@@ -547,7 +544,6 @@ class HibernateValidatorProcessor {
                     AnnotationTarget enclosingTarget = annotation.target().asType().enclosingTarget();
                     if (enclosingTarget.kind() == AnnotationTarget.Kind.FIELD) {
                         contributeClass(classNamesToBeValidated, indexView, enclosingTarget.asField().declaringClass());
-                        // reflectiveFields.produce(new ReflectiveFieldBuildItem(getClass().getName(), enclosingTarget.asField()));
                         accessorBuildItem.produce(
                                 new HibernateAccessorBuildItem.Builder(enclosingTarget.asField().declaringClass(), indexView)
                                         .addField(enclosingTarget.asField())
@@ -559,8 +555,6 @@ class HibernateValidatorProcessor {
                         }
                     } else if (enclosingTarget.kind() == AnnotationTarget.Kind.METHOD) {
                         contributeClass(classNamesToBeValidated, indexView, enclosingTarget.asMethod().declaringClass());
-                        //                        reflectiveMethods
-                        //                                .produce(new ReflectiveMethodBuildItem(getClass().getName(), enclosingTarget.asMethod()));
                         if (enclosingTarget.asMethod().parametersCount() == 0
                                 && enclosingTarget.asMethod().returnType().kind() != Type.Kind.VOID) {
                             accessorBuildItem
