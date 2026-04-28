@@ -12,9 +12,9 @@ public final class NamingUtil {
         return "%s$%s".formatted(outerName, innerName);
     }
 
-    public static String methodReaderClassName(String name) {
-        return readerClassName(TYPE_METHOD, name);
-    }
+    //    public static String methodReaderClassName(String name) {
+    //        return readerClassName(TYPE_METHOD, name);
+    //    }
 
     public static String methodReaderClassName(String declaringClass, String hostClassName, String name) {
         if (declaringClass.equals(hostClassName)) {
@@ -24,9 +24,9 @@ public final class NamingUtil {
         }
     }
 
-    public static String methodWriterClassName(String name) {
-        return writerClassName(TYPE_METHOD, name);
-    }
+    //    public static String methodWriterClassName(String name) {
+    //        return writerClassName(TYPE_METHOD, name);
+    //    }
 
     public static String methodWriterClassName(String declaringClass, String hostClassName, String name) {
         if (declaringClass.equals(hostClassName)) {
@@ -36,9 +36,9 @@ public final class NamingUtil {
         }
     }
 
-    public static String fieldReaderClassName(String name) {
-        return readerClassName(TYPE_FIELD, name);
-    }
+    //    public static String fieldReaderClassName(String name) {
+    //        return readerClassName(TYPE_FIELD, name);
+    //    }
 
     public static String fieldReaderClassName(String declaringClass, String hostClassName, String name) {
         if (declaringClass.equals(hostClassName)) {
@@ -48,9 +48,9 @@ public final class NamingUtil {
         }
     }
 
-    public static String fieldWriterClassName(String name) {
-        return writerClassName(TYPE_FIELD, name);
-    }
+    //    public static String fieldWriterClassName(String name) {
+    //        return writerClassName(TYPE_FIELD, name);
+    //    }
 
     public static String fieldWriterClassName(String declaringClass, String hostClassName, String name) {
         if (declaringClass.equals(hostClassName)) {

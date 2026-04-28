@@ -1,12 +1,12 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.accessorFqcn;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldReaderClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldWriterClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodReaderClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodWriterClassName;
-import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.FieldMetadata;
-import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
 
 import java.lang.constant.ClassDesc;
 import java.lang.reflect.Constructor;
@@ -123,7 +123,8 @@ class HibernateAccessorPackageFactoryImplementation {
                                 Const.of(KEY_FORMAT.formatted(f.declaringClass(), TYPE_FIELD, f.name())),
                                 bc.getStaticField(FieldDesc.of(accessorClass, "INSTANCE", accessorClass)));
                         accessorClass = ClassDesc
-                                .of(accessorFqcn(f.declaringClass(), fieldWriterClassName(f.name())));
+                                .of(accessorFqcn(f.host(),
+                                        fieldWriterClassName(f.declaringClass(), f.host(), f.name())));
                         bc.invokeInterface(
                                 mapPut,
                                 this_.field(writers),
