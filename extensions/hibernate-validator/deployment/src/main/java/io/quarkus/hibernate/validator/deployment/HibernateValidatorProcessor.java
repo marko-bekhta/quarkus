@@ -109,7 +109,8 @@ import io.quarkus.gizmo2.ParamVar;
 import io.quarkus.gizmo2.StaticFieldVar;
 import io.quarkus.gizmo2.desc.ConstructorDesc;
 import io.quarkus.gizmo2.desc.MethodDesc;
-import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryBuildItem;
 import io.quarkus.hibernate.validator.ValidatorFactoryCustomizer;
 import io.quarkus.hibernate.validator.runtime.DisableLoggingFeature;
 import io.quarkus.hibernate.validator.runtime.HibernateBeanValidationConfigValidator;
@@ -465,6 +466,7 @@ class HibernateValidatorProcessor {
             BuildProducer<HibernateAccessorBuildItem> accessorBuildItem,
             BuildProducer<AnnotationsTransformerBuildItem> annotationsTransformers,
             BuildProducer<SyntheticBeanBuildItem> syntheticBeans,
+            HibernateAccessorFactoryBuildItem hibernateAccessorFactory,
             BeanArchiveIndexBuildItem beanArchiveIndexBuildItem,
             CombinedIndexBuildItem combinedIndexBuildItem,
             Optional<AdditionalConstrainedClassesIndexBuildItem> additionalConstrainedClassesIndexBuildItem,
@@ -619,7 +621,8 @@ class HibernateValidatorProcessor {
                         beanValidationTraversableResolver
                                 .map(BeanValidationTraversableResolverBuildItem::getAttributeLoadedPredicate),
                         localesBuildTimeConfig,
-                        hibernateValidatorBuildTimeConfig))
+                        hibernateValidatorBuildTimeConfig,
+                        hibernateAccessorFactory.accessorFactory()))
                 .addQualifier().annotation(DotNames.NAMED).addValue("value", VALIDATOR_FACTORY_NAME).done()
                 .destroyer(BeanDestroyer.AutoCloseableDestroyer.class)
                 .addInjectionPoint(ParameterizedType.create(CDI_INSTANCE,

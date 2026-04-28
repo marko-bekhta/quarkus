@@ -10,12 +10,11 @@ public class QuarkusHibernateAccessorFactoryResolverInitiator
         implements StandardServiceInitiator<HibernateAccessorFactoryResolver> {
 
     public static final QuarkusHibernateAccessorFactoryResolverInitiator INSTANCE = new QuarkusHibernateAccessorFactoryResolverInitiator();
-    private static final QuarkusHibernateAccessorFactoryResolver SERVICE_INSTANCE = new QuarkusHibernateAccessorFactoryResolver();
 
     @Override
     public HibernateAccessorFactoryResolver initiateService(Map<String, Object> configurationValues,
             ServiceRegistryImplementor registry) {
-        return SERVICE_INSTANCE;
+        return new QuarkusHibernateAccessorFactoryResolver();
     }
 
     @Override
