@@ -18,6 +18,7 @@ public class QuarkusClassLoadingHibernateAccessorFactory implements HibernateAcc
 
     public static final QuarkusClassLoadingHibernateAccessorFactory INSTANCE = new QuarkusClassLoadingHibernateAccessorFactory();
 
+    @Override
     public <T> HibernateAccessorInstantiator<T> instantiator(Constructor<T> constructor) {
         throw new UnsupportedOperationException("Not implemented yet.");
     }
