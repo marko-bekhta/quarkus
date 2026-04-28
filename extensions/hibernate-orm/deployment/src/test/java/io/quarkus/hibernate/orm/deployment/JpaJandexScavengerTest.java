@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 
 import io.quarkus.deployment.builditem.HotDeploymentWatchedFileBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
-import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem;
 import io.quarkus.hibernate.orm.packages.ParentEntity;
 import io.quarkus.hibernate.orm.xml.hbm.NonAnnotatedComponent;
 import io.quarkus.hibernate.orm.xml.hbm.NonAnnotatedComponentUsingEntity;

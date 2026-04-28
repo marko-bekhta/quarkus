@@ -10,7 +10,7 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Opcodes;
 
 import io.quarkus.deployment.util.AsmUtil;
-import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
 
 class HibernateAccessorSetterFunction implements BiFunction<String, ClassVisitor, ClassVisitor> {
 
