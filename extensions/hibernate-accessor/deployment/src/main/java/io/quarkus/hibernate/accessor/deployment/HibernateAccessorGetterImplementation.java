@@ -6,9 +6,8 @@ import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodReaderC
 
 import org.objectweb.asm.MethodVisitor;
 
-import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
-import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
-import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.TypeMetadata;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.TypeMetadata;
 
 class HibernateAccessorGetterImplementation extends HibernateAccessorMemberBaseImplementation {
 

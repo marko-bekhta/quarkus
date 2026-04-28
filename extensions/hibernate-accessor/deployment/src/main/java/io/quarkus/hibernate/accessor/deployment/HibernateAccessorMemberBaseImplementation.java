@@ -1,8 +1,8 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MemberMetadata;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.TypeMetadata;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
-import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MemberMetadata;
-import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.TypeMetadata;
 
 import org.hibernate.accessor.HibernateAccessorValueReader;
 import org.hibernate.accessor.HibernateAccessorValueWriter;

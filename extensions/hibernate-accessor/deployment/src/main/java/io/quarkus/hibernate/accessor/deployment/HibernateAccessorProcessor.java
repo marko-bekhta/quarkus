@@ -1,7 +1,7 @@
 package io.quarkus.hibernate.accessor.deployment;
 
-import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.Builder;
-import static io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.FieldMetadata;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.Builder;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -19,15 +19,17 @@ import io.quarkus.deployment.Feature;
 import io.quarkus.deployment.GeneratedClassGizmo2Adaptor;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
+import io.quarkus.deployment.annotations.ExecutionTime;
+import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.BytecodeTransformerBuildItem;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedClassBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.gizmo2.Gizmo;
-import io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
+import io.quarkus.hibernate.accessor.runtime.HibernateAccessorRecorder;
 import io.quarkus.hibernate.accessor.runtime.ReflectionFreeAccessor;
-import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem;
-import io.quarkus.hibernate.accessor.spi.HibernateAccessorBuildItem.MethodMetadata;
 
 class HibernateAccessorProcessor {
 
@@ -86,7 +88,7 @@ class HibernateAccessorProcessor {
 
         //  note: build items are comparable so they should all come sorted (in "groups" by type),
         //   leverage that instead of one huge map to find "duplicates"
-        HibernateAccessorFactoryTransformationFunction factoryTransformation = new HibernateAccessorFactoryTransformationFunction();
+        HibernateAccessorFactoryImplementation factoryImplementation = new HibernateAccessorFactoryImplementation();
         HibernateAccessorPackageFactoryImplementation packageFactoryImplementation = null;
         String currentPackage = null;
         String currentType = null;
@@ -98,7 +100,7 @@ class HibernateAccessorProcessor {
                     packageFactoryImplementation.create(classGizmo);
                 }
                 packageFactoryImplementation = new HibernateAccessorPackageFactoryImplementation(currentPackage);
-                factoryTransformation.addPackage(currentPackage);
+                factoryImplementation.addPackage(currentPackage);
             }
             if (!accessItem.getType().name().equals(currentType)) {
                 currentType = accessItem.getType().name();
@@ -161,11 +163,22 @@ class HibernateAccessorProcessor {
         if (packageFactoryImplementation != null) {
             packageFactoryImplementation.create(classGizmo);
         }
-        transformer.produce(new BytecodeTransformerBuildItem.Builder()
-                .setClassToTransform(QuarkusHibernateAccessorFactory.class.getName())
-                .setCacheable(true)
-                .setPriority(-2)
-                .setVisitorFunction(factoryTransformation)
-                .build());
+        factoryImplementation.create(classGizmo);
     }
+
+    @BuildStep
+    void registerForReflection(
+            BuildProducer<ReflectiveClassBuildItem> reflectiveClass) {
+        reflectiveClass.produce(ReflectiveClassBuildItem
+                .builder(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY).constructors().build());
+    }
+
+    @BuildStep
+    @Record(ExecutionTime.STATIC_INIT)
+    HibernateAccessorFactoryBuildItem accessFActory(
+            HibernateAccessorRecorder recorder) {
+        return new HibernateAccessorFactoryBuildItem(
+                recorder.createAccessorFactory(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY));
+    }
+
 }

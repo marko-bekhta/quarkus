@@ -26,6 +26,7 @@ import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
 import jakarta.validation.valueextraction.ValueExtractor;
 
+import org.hibernate.accessor.HibernateAccessorFactory;
 import org.hibernate.validator.HibernateValidatorFactory;
 import org.hibernate.validator.PredefinedScopeHibernateValidator;
 import org.hibernate.validator.PredefinedScopeHibernateValidatorConfiguration;
@@ -38,12 +39,12 @@ import io.quarkus.arc.Arc;
 import io.quarkus.arc.InstanceHandle;
 import io.quarkus.arc.SyntheticCreationalContext;
 import io.quarkus.arc.runtime.BeanContainer;
-import io.quarkus.hibernate.accessor.runtime.QuarkusClassLoadingHibernateAccessorFactory;
 import io.quarkus.hibernate.validator.ValidatorFactoryCustomizer;
 import io.quarkus.hibernate.validator.runtime.clockprovider.RuntimeReinitializedDefaultClockProvider;
 import io.quarkus.hibernate.validator.runtime.jaxrs.ResteasyConfigSupport;
 import io.quarkus.hibernate.validator.runtime.locale.LocaleResolversWrapper;
 import io.quarkus.runtime.LocalesBuildTimeConfig;
+import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.ShutdownContext;
 import io.quarkus.runtime.annotations.Recorder;
 
@@ -90,7 +91,8 @@ public class HibernateValidatorRecorder {
             boolean hasXmlConfiguration,
             Optional<BiPredicate<Object, String>> attributeLoadedPredicate,
             LocalesBuildTimeConfig localesBuildTimeConfig,
-            HibernateValidatorBuildTimeConfig hibernateValidatorBuildTimeConfig) {
+            HibernateValidatorBuildTimeConfig hibernateValidatorBuildTimeConfig,
+            RuntimeValue<HibernateAccessorFactory> accessorFactory) {
         return new Function<>() {
             @Override
             public HibernateValidatorFactory apply(SyntheticCreationalContext<HibernateValidatorFactory> context) {
@@ -217,7 +219,7 @@ public class HibernateValidatorRecorder {
                     validatorFactoryCustomizer.customize(configuration);
                 }
 
-                configuration.accessorFactory(QuarkusClassLoadingHibernateAccessorFactory.INSTANCE);
+                configuration.accessorFactory(accessorFactory.getValue());
 
                 ValidatorFactory validatorFactory = configuration.buildValidatorFactory();
 

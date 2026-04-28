@@ -14,7 +14,6 @@
     <name>Quarkus - Hibernate Accessor</name>
     <packaging>pom</packaging>
     <modules>
-        <module>spi</module>
         <module>deployment</module>
         <module>runtime</module>
     </modules>

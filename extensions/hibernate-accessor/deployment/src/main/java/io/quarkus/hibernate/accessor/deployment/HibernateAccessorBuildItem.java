@@ -1,4 +1,4 @@
-package io.quarkus.hibernate.accessor.spi;
+package io.quarkus.hibernate.accessor.deployment;
 
 import java.lang.reflect.Modifier;
 import java.util.Comparator;
@@ -122,7 +122,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
 
             for (MethodInfo method : classToAccess.methods()) {
-                if (!Modifier.isStatic(method.flags())) {
+                if (!Modifier.isStatic(method.flags()) && !method.isConstructor()) {
                     if (method.parametersCount() == 0
                             && method.returnType().kind() != Type.Kind.VOID) {
                         addGetter(method);
