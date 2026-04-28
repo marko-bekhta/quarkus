@@ -1,8 +1,5 @@
 package io.quarkus.hibernate.accessor.deployment;
 
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.Builder;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
-
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -27,6 +24,8 @@ import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedClassBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.gizmo2.Gizmo;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.Builder;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
 import io.quarkus.hibernate.accessor.runtime.HibernateAccessorRecorder;
 import io.quarkus.hibernate.accessor.runtime.ReflectionFreeAccessor;

@@ -213,13 +213,13 @@ public class HibernateValidatorRecorder {
                     configuration.addValueExtractor(valueExtractor);
                 }
 
+                configuration.accessorFactory(accessorFactory.getValue());
+
                 Instance<ValidatorFactoryCustomizer> validatorFactoryCustomizers = context
                         .getInjectedReference(INSTANCE_VALIDATOR_FACTORY_CUSTOMER_TYPE_LITERAL);
                 for (ValidatorFactoryCustomizer validatorFactoryCustomizer : validatorFactoryCustomizers) {
                     validatorFactoryCustomizer.customize(configuration);
                 }
-
-                configuration.accessorFactory(accessorFactory.getValue());
 
                 ValidatorFactory validatorFactory = configuration.buildValidatorFactory();
 
