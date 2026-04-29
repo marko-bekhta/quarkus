@@ -1,7 +1,9 @@
 package io.quarkus.hibernate.accessor.runtime;
 
+import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.constructorDescriptor;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldReaderClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldWriterClassName;
+import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.instantiatorClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodReaderClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodWriterClassName;
 
@@ -18,9 +20,20 @@ public class QuarkusClassLoadingHibernateAccessorFactory implements HibernateAcc
 
     public static final QuarkusClassLoadingHibernateAccessorFactory INSTANCE = new QuarkusClassLoadingHibernateAccessorFactory();
 
+    @SuppressWarnings("unchecked")
     @Override
     public <T> HibernateAccessorInstantiator<T> instantiator(Constructor<T> constructor) {
-        throw new UnsupportedOperationException("Not implemented yet.");
+        try {
+            String outerName = constructor.getDeclaringClass().getNestHost().getName();
+            String simpleName = instantiatorClassName(constructor.getDeclaringClass().getName(),
+                    constructor.getDeclaringClass().getNestHost().getName(),
+                    constructorDescriptor(constructor));
+            return (HibernateAccessorInstantiator<T>) classForName(outerName + "$" + simpleName)
+                    .getDeclaredField("INSTANCE")
+                    .get(null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override

@@ -82,9 +82,14 @@ class HibernateAccessorFactoryImplementation {
             cc.method("instantiator", mc -> {
                 mc.public_();
                 mc.returning(HibernateAccessorInstantiator.class);
-                mc.parameter("constructor", Constructor.class);
+                ParamVar constructor = mc.parameter("constructor", Constructor.class);
                 mc.body(bc -> {
-                    bc.throw_(UnsupportedOperationException.class);
+                    Expr delegate = lookupDelegate(bc, this_, delegates, mapGet, constructor,
+                            MethodDesc.of(Constructor.class, "getDeclaringClass", Class.class));
+                    bc.return_(bc.invokeInterface(
+                            MethodDesc.of(HibernateAccessorFactory.class, "instantiator", HibernateAccessorInstantiator.class,
+                                    Constructor.class),
+                            delegate, constructor));
                 });
             });
 

@@ -1,10 +1,12 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.accessorFqcn;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldReaderClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.fieldWriterClassName;
+import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.instantiatorClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodReaderClassName;
 import static io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.methodWriterClassName;
 
@@ -39,17 +41,20 @@ class HibernateAccessorPackageFactoryImplementation {
     private static final String KEY_FORMAT = "%s.%s.%s";
     private static final String TYPE_FIELD = "field";
     private static final String TYPE_METHOD = "method";
+    private static final String TYPE_CONSTRUCTOR = "constructor";
     private final String packageName;
     private final List<FieldMetadata> fields;
 
     private final List<MethodMetadata> methodReaders;
     private final List<MethodMetadata> methodWriters;
+    private final List<ConstructorMetadata> constructors;
 
     public HibernateAccessorPackageFactoryImplementation(String packageName) {
         this.packageName = packageName;
         this.fields = new ArrayList<>();
         this.methodReaders = new ArrayList<>();
         this.methodWriters = new ArrayList<>();
+        this.constructors = new ArrayList<>();
     }
 
     public void add(FieldMetadata field) {
@@ -62,6 +67,10 @@ class HibernateAccessorPackageFactoryImplementation {
 
     public void addWriter(MethodMetadata setter) {
         methodWriters.add(setter);
+    }
+
+    public void addInstantiator(ConstructorMetadata constructor) {
+        constructors.add(constructor);
     }
 
     public void create(io.quarkus.gizmo2.Gizmo classGizmo) {
@@ -96,6 +105,14 @@ class HibernateAccessorPackageFactoryImplementation {
                         List.of(TypeArgument.of(String.class), TypeArgument.of(HibernateAccessorValueWriter.class))));
                 fc.setInitializer(bc -> bc.yield(bc.new_(GenericType.of(HashMap.class,
                         List.of(TypeArgument.of(String.class), TypeArgument.of(HibernateAccessorValueWriter.class))))));
+            });
+            FieldDesc instantiators = cc.field("instantiators", fc -> {
+                fc.private_();
+                fc.final_();
+                fc.setType(GenericType.of(Map.class,
+                        List.of(TypeArgument.of(String.class), TypeArgument.of(HibernateAccessorInstantiator.class))));
+                fc.setInitializer(bc -> bc.yield(bc.new_(GenericType.of(HashMap.class,
+                        List.of(TypeArgument.of(String.class), TypeArgument.of(HibernateAccessorInstantiator.class))))));
             });
 
             final MethodDesc mapPut;
@@ -152,6 +169,17 @@ class HibernateAccessorPackageFactoryImplementation {
                                 Const.of(KEY_FORMAT.formatted(m.declaringClass(), TYPE_METHOD, m.name())),
                                 bc.getStaticField(FieldDesc.of(accessorClass, "INSTANCE", accessorClass)));
                     }
+
+                    for (ConstructorMetadata c : constructors) {
+                        ClassDesc accessorClass = ClassDesc
+                                .of(accessorFqcn(c.host(),
+                                        instantiatorClassName(c.declaringClass(), c.host(), c.descriptor())));
+                        bc.invokeInterface(
+                                mapPut,
+                                this_.field(instantiators),
+                                Const.of(KEY_FORMAT.formatted(c.declaringClass(), TYPE_CONSTRUCTOR, c.descriptor())),
+                                bc.getStaticField(FieldDesc.of(accessorClass, "INSTANCE", accessorClass)));
+                    }
                     bc.return_();
                 });
             });
@@ -159,9 +187,31 @@ class HibernateAccessorPackageFactoryImplementation {
             cc.method("instantiator", mc -> {
                 mc.public_();
                 mc.returning(HibernateAccessorInstantiator.class);
-                mc.parameter("constructor", Constructor.class);
-                mc.body(b0 -> {
-                    b0.throw_(UnsupportedOperationException.class);
+                ParamVar constructor = mc.parameter("constructor", Constructor.class);
+                mc.body(bc -> {
+                    Expr declClass = bc.invokeVirtual(
+                            MethodDesc.of(Constructor.class, "getDeclaringClass", Class.class), constructor);
+                    Expr className = bc.invokeVirtual(MethodDesc.of(Class.class, "getName", String.class), declClass);
+                    Expr descriptor = bc.invokeStatic(
+                            MethodDesc.of(
+                                    io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.class,
+                                    "constructorDescriptor", String.class, Constructor.class),
+                            constructor);
+
+                    LocalVar inst = bc.localVar(
+                            "inst",
+                            HibernateAccessorInstantiator.class,
+                            bc.invokeInterface(
+                                    mapGet,
+                                    this_.field(instantiators),
+                                    bc.invokeVirtual(MethodDesc.of(String.class, "formatted", String.class, Object[].class),
+                                            Const.of(KEY_FORMAT),
+                                            bc.newArray(Object.class, className, Const.of(TYPE_CONSTRUCTOR), descriptor))));
+
+                    bc.ifElse(
+                            bc.isNull(inst),
+                            b1 -> b1.throw_(UnsupportedOperationException.class),
+                            b1 -> b1.return_(inst));
                 });
             });
 
