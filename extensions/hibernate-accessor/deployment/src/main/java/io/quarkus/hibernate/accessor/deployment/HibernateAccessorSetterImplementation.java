@@ -38,6 +38,7 @@ class HibernateAccessorSetterImplementation extends HibernateAccessorMemberBaseI
     protected void doActuallySetValue(MethodVisitor mv, String outerClassName,
             HibernateAccessorBuildItem.MemberMetadata member) {
         String methodDescriptor = "(" + setter.descriptor() + ")V";
-        mv.visitMethodInsn(INVOKEVIRTUAL, outerClassName, setter.name(), methodDescriptor, false);
+        int opcode = setter.isInterface() ? INVOKEINTERFACE : INVOKEVIRTUAL;
+        mv.visitMethodInsn(opcode, outerClassName, setter.name(), methodDescriptor, setter.isInterface());
     }
 }

@@ -110,7 +110,8 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type returnType = getter.returnType();
             this.getters.add(new MethodMetadata(getter.name(), returnType.descriptor(),
-                    returnType.kind() == Type.Kind.PRIMITIVE, getter.declaringClass().name().toString(), host));
+                    returnType.kind() == Type.Kind.PRIMITIVE, getter.declaringClass().name().toString(), host,
+                    Modifier.isInterface(getter.declaringClass().flags())));
 
             return this;
         }
@@ -121,7 +122,8 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type valueType = setter.parameterType(0);
             this.setters.add(new MethodMetadata(setter.name(), valueType.descriptor(), valueType.kind() == Type.Kind.PRIMITIVE,
-                    setter.declaringClass().name().toString(), host));
+                    setter.declaringClass().name().toString(), host,
+                    Modifier.isInterface(setter.declaringClass().flags())));
 
             return this;
         }
@@ -188,7 +190,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
     }
 
     public record MethodMetadata(String name, String descriptor, boolean isPrimitive,
-            String declaringClass, String host) implements MemberMetadata {
+            String declaringClass, String host, boolean isInterface) implements MemberMetadata {
     }
 
     public record ConstructorMetadata(String declaringClass, String host, String descriptor,
