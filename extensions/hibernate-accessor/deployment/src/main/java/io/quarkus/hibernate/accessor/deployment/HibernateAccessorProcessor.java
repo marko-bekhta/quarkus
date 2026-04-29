@@ -25,6 +25,7 @@ import io.quarkus.deployment.builditem.GeneratedClassBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.gizmo2.Gizmo;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.Builder;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
 import io.quarkus.hibernate.accessor.runtime.HibernateAccessorRecorder;
@@ -58,7 +59,9 @@ class HibernateAccessorProcessor {
                     Builder builder = builders.computeIfAbsent(
                             method.declaringClass().name().toString(),
                             modelClass -> new Builder(index.getClassByName(modelClass), index));
-                    if (method.parametersCount() == 0) {
+                    if (method.isConstructor()) {
+                        builder.addConstructor(method);
+                    } else if (method.parametersCount() == 0) {
                         builder.addGetter(method);
                     } else if (method.parametersCount() == 1) {
                         builder.addSetter(method);
@@ -158,6 +161,23 @@ class HibernateAccessorProcessor {
 
                     generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getWriterName(),
                             implementation.generateWriterBytes()));
+                }
+            }
+
+            for (ConstructorMetadata ctor : accessItem.getConstructors()) {
+                if (processedMembers.add(ctor)) {
+                    packageFactoryImplementation.addInstantiator(ctor);
+                    transformer.produce(new BytecodeTransformerBuildItem.Builder()
+                            .setClassToTransform(accessItem.getType().host())
+                            .setCacheable(true)
+                            .setPriority(-2)
+                            .setVisitorFunction(new HibernateAccessorConstructorFunction(ctor))
+                            .build());
+
+                    var implementation = new HibernateAccessorConstructorImplementation(ctor, accessItem.getType());
+
+                    generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getInstantiatorName(),
+                            implementation.generateInstantiator()));
                 }
             }
         }
