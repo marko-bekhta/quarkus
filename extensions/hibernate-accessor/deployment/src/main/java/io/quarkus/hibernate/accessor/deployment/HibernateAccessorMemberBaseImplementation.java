@@ -4,6 +4,7 @@ import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildIte
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.TypeMetadata;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 
+import org.hibernate.accessor.HibernateAccessorInstantiator;
 import org.hibernate.accessor.HibernateAccessorValueReader;
 import org.hibernate.accessor.HibernateAccessorValueWriter;
 import org.objectweb.asm.ClassWriter;
@@ -13,17 +14,61 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
 import io.quarkus.deployment.util.AsmUtil;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
 
 abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
 
+    private static final String INSTANTIATOR_INTERFACE = fqcnToName(HibernateAccessorInstantiator.class.getName());
     private static final String WRITER_INTERFACE = fqcnToName(HibernateAccessorValueWriter.class.getName());
     private static final String READER_INTERFACE = fqcnToName(HibernateAccessorValueReader.class.getName());
+
+    /**
+     * Generates bytecode for an instantiator inner class.
+     *
+     * @param innerClassName Fully qualified internal name of inner class
+     * @param outerClass Outer class metadata
+     * @param constructor Constructor metadata (to specify which constructor to call)
+     * @return Bytecode for the inner class
+     */
+    public byte[] generateInstantiator(String innerClassName, TypeMetadata outerClass, ConstructorMetadata constructor) {
+        String targetClassName = fqcnToName(outerClass.name());
+        String nestHost = fqcnToName(outerClass.host());
+
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+
+        String classSignature = "Ljava/lang/Object;L" + INSTANTIATOR_INTERFACE + "<L" + targetClassName + ";>;";
+
+        cw.visit(
+                V17,
+                ACC_PUBLIC | ACC_SUPER,
+                innerClassName,
+                classSignature,
+                "java/lang/Object",
+                new String[] { INSTANTIATOR_INTERFACE });
+
+        String simpleInnerName = innerClassName.substring(outerClass.name().length() + 1);
+        cw.visitInnerClass(
+                innerClassName,
+                nestHost,
+                simpleInnerName,
+                ACC_PUBLIC | ACC_STATIC);
+
+        cw.visitNestHost(nestHost);
+
+        generateInstanceField(cw, innerClassName);
+        generateConstructor(cw);
+        generateCreateMethod(cw, targetClassName, constructor);
+        generateStaticInitializer(cw, innerClassName);
+
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
 
     /**
      * Generates bytecode for an accessor writer inner class.
      *
      * @param innerClassName Fully qualified internal name of inner class
-     * @param outerClass Fully qualified internal name of outer class
+     * @param outerClass Outer class metadata
      * @param member Processed member (field/method) metadata
      * @return Bytecode for the inner class
      */
@@ -69,7 +114,7 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
      * Generates bytecode for an accessor reader inner class.
      *
      * @param innerClassName Fully qualified internal name of inner class
-     * @param outerClass Fully qualified internal name of outer class
+     * @param outerClass Outer class metadata
      * @param member Processed member (field/method) metadata
      * @return Bytecode for the inner class
      */
@@ -195,6 +240,52 @@ abstract class HibernateAccessorMemberBaseImplementation implements Opcodes {
         mv.visitInsn(RETURN);
         mv.visitMaxs(0, 0); // COMPUTE_FRAMES will calculate
         mv.visitEnd();
+    }
+
+    private void generateCreateMethod(ClassWriter cw, String targetClassName, ConstructorMetadata constructor) {
+        MethodVisitor mv = cw.visitMethod(
+                ACC_PUBLIC | ACC_VARARGS,
+                "create",
+                "([Ljava/lang/Object;)Ljava/lang/Object;",
+                null,
+                null);
+        mv.visitCode();
+
+        mv.visitTypeInsn(NEW, targetClassName);
+        mv.visitInsn(DUP);
+
+        for (int i = 0; i < constructor.parameters().size(); i++) {
+            var param = constructor.parameters().get(i);
+
+            mv.visitVarInsn(ALOAD, 1);
+            pushIntConst(mv, i);
+            mv.visitInsn(AALOAD);
+
+            Type paramType = Type.getType(param.descriptor());
+            if (param.isPrimitive()) {
+                AsmUtil.unboxIfRequired(mv, paramType);
+            } else {
+                mv.visitTypeInsn(CHECKCAST, paramType.getInternalName());
+            }
+        }
+
+        mv.visitMethodInsn(INVOKESPECIAL, targetClassName, "<init>", constructor.descriptor(), false);
+
+        mv.visitInsn(ARETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    private static void pushIntConst(MethodVisitor mv, int value) {
+        if (value >= -1 && value <= 5) {
+            mv.visitInsn(ICONST_0 + value);
+        } else if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) {
+            mv.visitIntInsn(BIPUSH, value);
+        } else if (value >= Short.MIN_VALUE && value <= Short.MAX_VALUE) {
+            mv.visitIntInsn(SIPUSH, value);
+        } else {
+            mv.visitLdcInsn(value);
+        }
     }
 
     protected abstract void doActuallyGetValue(MethodVisitor mv, String outerClassName, MemberMetadata member);

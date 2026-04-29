@@ -1,14 +1,17 @@
 package io.quarkus.hibernate.accessor.deployment;
 
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.FieldInfo;
 import org.jboss.jandex.IndexView;
 import org.jboss.jandex.MethodInfo;
+import org.jboss.jandex.MethodParameterInfo;
 import org.jboss.jandex.Type;
 
 import io.quarkus.builder.item.MultiBuildItem;
@@ -22,13 +25,15 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
     private final Set<FieldMetadata> fields;
     private final Set<MethodMetadata> getters;
     private final Set<MethodMetadata> setters;
+    private final Set<ConstructorMetadata> constructors;
 
     public HibernateAccessorBuildItem(TypeMetadata type, Set<FieldMetadata> fields,
-            Set<MethodMetadata> getters, Set<MethodMetadata> setters) {
+            Set<MethodMetadata> getters, Set<MethodMetadata> setters, Set<ConstructorMetadata> constructors) {
         this.type = type;
         this.fields = fields == null ? Set.of() : fields;
         this.getters = getters == null ? Set.of() : getters;
         this.setters = setters == null ? Set.of() : setters;
+        this.constructors = constructors == null ? Set.of() : constructors;
     }
 
     public TypeMetadata getType() {
@@ -45,6 +50,10 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
 
     public Set<MethodMetadata> getSetters() {
         return setters;
+    }
+
+    public Set<ConstructorMetadata> getConstructors() {
+        return constructors;
     }
 
     @Override
@@ -67,6 +76,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         private Set<FieldMetadata> fields;
         private Set<MethodMetadata> getters;
         private Set<MethodMetadata> setters;
+        private Set<ConstructorMetadata> constructors;
 
         public Builder(ClassInfo modelClass, IndexView index) {
             this.packageName = modelClass.name().packagePrefix();
@@ -116,6 +126,21 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             return this;
         }
 
+        public Builder addConstructor(MethodInfo constructor) {
+            if (this.constructors == null) {
+                this.constructors = new HashSet<>();
+            }
+            String descriptor = constructor.descriptor();
+            List<ParameterMetadata> parameterDescriptors = new ArrayList<>();
+            for (MethodParameterInfo parameter : constructor.parameters()) {
+                parameterDescriptors.add(new ParameterMetadata(parameter.nameOrDefault(), parameter.type().descriptor(),
+                        parameter.type().kind() == Type.Kind.PRIMITIVE));
+            }
+            this.constructors.add(new ConstructorMetadata(
+                    constructor.declaringClass().name().toString(), host, descriptor, parameterDescriptors));
+            return this;
+        }
+
         public Builder all(ClassInfo classToAccess) {
             for (FieldInfo field : classToAccess.fields()) {
                 if (!Modifier.isStatic(field.flags())) {
@@ -124,7 +149,9 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
 
             for (MethodInfo method : classToAccess.methods()) {
-                if (!Modifier.isStatic(method.flags()) && !method.isConstructor()) {
+                if (method.isConstructor()) {
+                    addConstructor(method);
+                } else if (!Modifier.isStatic(method.flags())) {
                     if (method.parametersCount() == 0
                             && method.returnType().kind() != Type.Kind.VOID) {
                         addGetter(method);
@@ -139,7 +166,8 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         }
 
         public HibernateAccessorBuildItem build() {
-            return new HibernateAccessorBuildItem(new TypeMetadata(packageName, type, host), fields, getters, setters);
+            return new HibernateAccessorBuildItem(new TypeMetadata(packageName, type, host), fields, getters, setters,
+                    constructors);
         }
     }
 
@@ -161,6 +189,13 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
 
     public record MethodMetadata(String name, String descriptor, boolean isPrimitive,
             String declaringClass, String host) implements MemberMetadata {
+    }
+
+    public record ConstructorMetadata(String declaringClass, String host, String descriptor,
+            List<ParameterMetadata> parameters) {
+    }
+
+    public record ParameterMetadata(String name, String descriptor, boolean isPrimitive) {
     }
 
     public record TypeMetadata(String packageName, String name, String host) implements Comparable<TypeMetadata> {
