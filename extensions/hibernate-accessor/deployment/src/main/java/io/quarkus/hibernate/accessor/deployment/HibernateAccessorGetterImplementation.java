@@ -32,7 +32,8 @@ class HibernateAccessorGetterImplementation extends HibernateAccessorMemberBaseI
     protected void doActuallyGetValue(MethodVisitor mv, String outerClassName,
             HibernateAccessorBuildItem.MemberMetadata member) {
         String methodDescriptor = "()" + getter.descriptor();
-        mv.visitMethodInsn(INVOKEVIRTUAL, outerClassName, getter.name(), methodDescriptor, false);
+        int opcode = getter.isInterface() ? INVOKEINTERFACE : INVOKEVIRTUAL;
+        mv.visitMethodInsn(opcode, outerClassName, getter.name(), methodDescriptor, getter.isInterface());
     }
 
     @Override
