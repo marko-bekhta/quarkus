@@ -63,6 +63,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         private final String packageName;
         private final String type;
         private final String host;
+        private final boolean record;
         private Set<FieldMetadata> fields;
         private Set<MethodMetadata> getters;
         private Set<MethodMetadata> setters;
@@ -71,6 +72,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             this.packageName = modelClass.name().packagePrefix();
             this.type = modelClass.name().toString();
             this.host = hostClass(modelClass, index);
+            this.record = modelClass.isRecord();
         }
 
         private static String hostClass(ClassInfo modelClass, IndexView index) {
@@ -87,7 +89,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type fieldType = field.type();
             this.fields.add(new FieldMetadata(field.name(), fieldType.descriptor(), fieldType.kind() == Type.Kind.PRIMITIVE,
-                    field.declaringClass().name().toString(), host));
+                    field.declaringClass().name().toString(), host, record));
 
             return this;
         }
@@ -154,7 +156,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
     }
 
     public record FieldMetadata(String name, String descriptor, boolean isPrimitive,
-            String declaringClass, String host) implements MemberMetadata {
+            String declaringClass, String host, boolean readOnly) implements MemberMetadata {
     }
 
     public record MethodMetadata(String name, String descriptor, boolean isPrimitive,
