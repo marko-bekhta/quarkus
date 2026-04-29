@@ -120,8 +120,10 @@ class HibernateAccessorProcessor {
 
                     generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getReaderName(),
                             implementation.generateReaderBytes()));
-                    generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getWriterName(),
-                            implementation.generateWriterBytes()));
+                    if (!field.readOnly()) {
+                        generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getWriterName(),
+                                implementation.generateWriterBytes()));
+                    }
                 }
             }
 

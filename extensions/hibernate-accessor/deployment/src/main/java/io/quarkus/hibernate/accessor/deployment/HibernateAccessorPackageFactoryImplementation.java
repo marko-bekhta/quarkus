@@ -122,14 +122,16 @@ class HibernateAccessorPackageFactoryImplementation {
                                 this_.field(readers),
                                 Const.of(KEY_FORMAT.formatted(f.declaringClass(), TYPE_FIELD, f.name())),
                                 bc.getStaticField(FieldDesc.of(accessorClass, "INSTANCE", accessorClass)));
-                        accessorClass = ClassDesc
-                                .of(accessorFqcn(f.host(),
-                                        fieldWriterClassName(f.declaringClass(), f.host(), f.name())));
-                        bc.invokeInterface(
-                                mapPut,
-                                this_.field(writers),
-                                Const.of(KEY_FORMAT.formatted(f.declaringClass(), TYPE_FIELD, f.name())),
-                                bc.getStaticField(FieldDesc.of(accessorClass, "INSTANCE", accessorClass)));
+                        if (!f.readOnly()) {
+                            accessorClass = ClassDesc
+                                    .of(accessorFqcn(f.host(),
+                                            fieldWriterClassName(f.declaringClass(), f.host(), f.name())));
+                            bc.invokeInterface(
+                                    mapPut,
+                                    this_.field(writers),
+                                    Const.of(KEY_FORMAT.formatted(f.declaringClass(), TYPE_FIELD, f.name())),
+                                    bc.getStaticField(FieldDesc.of(accessorClass, "INSTANCE", accessorClass)));
+                        }
                     }
 
                     for (MethodMetadata m : methodReaders) {
