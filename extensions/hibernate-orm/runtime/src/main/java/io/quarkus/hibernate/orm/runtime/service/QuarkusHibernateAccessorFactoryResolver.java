@@ -1,7 +1,5 @@
 package io.quarkus.hibernate.orm.runtime.service;
 
-import java.lang.invoke.MethodHandles;
-
 import org.hibernate.accessor.HibernateAccessorFactory;
 import org.hibernate.property.access.spi.HibernateAccessorFactoryResolver;
 
@@ -24,7 +22,7 @@ public class QuarkusHibernateAccessorFactoryResolver implements HibernateAccesso
     }
 
     @Override
-    public HibernateAccessorFactory resolveHibernateAccessorFactoryResolver(MethodHandles.Lookup lookup) {
+    public HibernateAccessorFactory resolveHibernateAccessorFactoryResolver() {
         return hibernateAccessorFactory;
     }
 }

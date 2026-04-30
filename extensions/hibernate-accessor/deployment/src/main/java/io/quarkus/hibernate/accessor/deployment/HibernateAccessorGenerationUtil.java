@@ -9,8 +9,4 @@ final class HibernateAccessorGenerationUtil {
         return fqcn.replace('.', '/');
     }
 
-    static String composeNestedName(String outerName, String innerName) {
-        return "%s$%s".formatted(outerName, innerName);
-    }
-
 }
