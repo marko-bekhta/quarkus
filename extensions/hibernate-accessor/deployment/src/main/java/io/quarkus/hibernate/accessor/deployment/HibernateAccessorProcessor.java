@@ -106,6 +106,9 @@ class HibernateAccessorProcessor {
         for (HibernateAccessorBuildItem accessItem : hibernateAccessorBuildItemList) {
             String host = accessItem.getType().host();
             HostData hostData = hostDataMap.computeIfAbsent(host, k -> new HostData());
+            if (!accessItem.getType().isPublic()) {
+                hostData.isPublic = false;
+            }
 
             if (!accessItem.getType().name().equals(currentType)) {
                 currentType = accessItem.getType().name();
@@ -167,6 +170,7 @@ class HibernateAccessorProcessor {
         }
 
         HibernateAccessorFactoryImplementation factoryImpl = new HibernateAccessorFactoryImplementation();
+        HibernateAccessorBridgeGenerator bridgeGen = new HibernateAccessorBridgeGenerator();
 
         List<String> readerHosts = new ArrayList<>();
         List<String> writerHosts = new ArrayList<>();
@@ -181,20 +185,32 @@ class HibernateAccessorProcessor {
                 interfaceHosts.add(host);
             }
 
+            boolean needsBridge = !data.isPublic && !data.isInterface;
+            String dispatchTarget = needsBridge ? HibernateAccessorBridgeGenerator.bridgeFqcn(host) : host;
+
+            if (needsBridge) {
+                generatedClasses.produce(new GeneratedClassBuildItem(true,
+                        HibernateAccessorBridgeGenerator.bridgeFqcn(host),
+                        bridgeGen.generate(host,
+                                !data.readers.isEmpty(),
+                                !data.writers.isEmpty(),
+                                !data.constructors.isEmpty())));
+            }
+
             int readerClassIndex = -1;
             if (!data.readers.isEmpty()) {
                 readerClassIndex = readerHosts.size();
-                readerHosts.add(host);
+                readerHosts.add(dispatchTarget);
             }
             int writerClassIndex = -1;
             if (!data.writers.isEmpty()) {
                 writerClassIndex = writerHosts.size();
-                writerHosts.add(host);
+                writerHosts.add(dispatchTarget);
             }
             int instantiatorClassIndex = -1;
             if (!data.constructors.isEmpty()) {
                 instantiatorClassIndex = instantiatorHosts.size();
-                instantiatorHosts.add(host);
+                instantiatorHosts.add(dispatchTarget);
             }
 
             for (FactoryEntry fe : data.factoryReaderFields) {
@@ -264,6 +280,7 @@ class HibernateAccessorProcessor {
         final List<FactoryEntry> factoryWriterFields = new ArrayList<>();
         final List<FactoryCtorEntry> factoryCtorEntries = new ArrayList<>();
         boolean isInterface;
+        boolean isPublic = true;
     }
 
     private record FactoryEntry(String declaringClass, String type, String name, int memberIndex) {
