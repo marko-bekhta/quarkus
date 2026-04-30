@@ -1,7 +1,9 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,6 +30,12 @@ import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.Build
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.ReadField;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.ReadGetter;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.ReadMember;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WriteField;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WriteMember;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WriteSetter;
 import io.quarkus.hibernate.accessor.runtime.HibernateAccessorRecorder;
 import io.quarkus.hibernate.accessor.runtime.ReflectionFreeAccessor;
 
@@ -86,105 +94,151 @@ class HibernateAccessorProcessor {
             List<HibernateAccessorBuildItem> hibernateAccessorBuildItemList,
             BuildProducer<GeneratedClassBuildItem> generatedClasses,
             BuildProducer<BytecodeTransformerBuildItem> transformer) {
-        Gizmo classGizmo = Gizmo.create(new GeneratedClassGizmo2Adaptor(generatedClasses, null, true));
 
-        //  note: build items are comparable so they should all come sorted (in "groups" by type),
-        //   leverage that instead of one huge map to find "duplicates"
-        HibernateAccessorFactoryImplementation factoryImplementation = new HibernateAccessorFactoryImplementation();
-        HibernateAccessorPackageFactoryImplementation packageFactoryImplementation = null;
-        String currentPackage = null;
-        String currentType = null;
+        if (hibernateAccessorBuildItemList.isEmpty()) {
+            return;
+        }
+
+        Map<String, HostData> hostDataMap = new LinkedHashMap<>();
         Set<Object> processedMembers = new HashSet<>();
+        String currentType = null;
+
         for (HibernateAccessorBuildItem accessItem : hibernateAccessorBuildItemList) {
-            if (!accessItem.getType().packageName().equals(currentPackage)) {
-                currentPackage = accessItem.getType().packageName();
-                if (packageFactoryImplementation != null) {
-                    packageFactoryImplementation.create(classGizmo);
-                }
-                packageFactoryImplementation = new HibernateAccessorPackageFactoryImplementation(currentPackage);
-                factoryImplementation.addPackage(currentPackage);
-            }
+            String host = accessItem.getType().host();
+            HostData hostData = hostDataMap.computeIfAbsent(host, k -> new HostData());
+
             if (!accessItem.getType().name().equals(currentType)) {
                 currentType = accessItem.getType().name();
                 processedMembers.clear();
             }
+
             for (FieldMetadata field : accessItem.getFields()) {
                 if (processedMembers.add(field)) {
-                    packageFactoryImplementation.add(field);
+                    int readerIdx = hostData.readers.size();
+                    hostData.readers.add(new ReadField(field.declaringClass(), field.name(),
+                            field.descriptor(), field.isPrimitive()));
+                    hostData.factoryReaderFields.add(new FactoryEntry(
+                            field.declaringClass(), "field", field.name(), readerIdx));
 
-                    transformer.produce(new BytecodeTransformerBuildItem.Builder()
-                            .setClassToTransform(accessItem.getType().host())
-                            .setCacheable(true)
-                            .setPriority(-2)
-                            .setVisitorFunction(new HibernateAccessorFieldFunction(field))
-                            .build());
-
-                    var implementation = new HibernateAccessorFieldImplementation(field, accessItem.getType());
-
-                    generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getReaderName(),
-                            implementation.generateReaderBytes()));
                     if (!field.readOnly()) {
-                        generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getWriterName(),
-                                implementation.generateWriterBytes()));
+                        int writerIdx = hostData.writers.size();
+                        hostData.writers.add(new WriteField(field.declaringClass(), field.name(),
+                                field.descriptor(), field.isPrimitive()));
+                        hostData.factoryWriterFields.add(new FactoryEntry(
+                                field.declaringClass(), "field", field.name(), writerIdx));
                     }
                 }
             }
 
             for (MethodMetadata getter : accessItem.getGetters()) {
                 if (processedMembers.add(getter)) {
-                    packageFactoryImplementation.addReader(getter);
-                    transformer.produce(new BytecodeTransformerBuildItem.Builder()
-                            .setClassToTransform(accessItem.getType().host())
-                            .setCacheable(true)
-                            .setPriority(-2)
-                            .setVisitorFunction(new HibernateAccessorGetterFunction(getter))
-                            .build());
-
-                    var implementation = new HibernateAccessorGetterImplementation(getter, accessItem.getType());
-
-                    generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getReaderName(),
-                            implementation.generateReaderBytes()));
+                    if (getter.isInterface() && getter.declaringClass().equals(host)) {
+                        hostData.isInterface = true;
+                    }
+                    int readerIdx = hostData.readers.size();
+                    hostData.readers.add(new ReadGetter(getter.declaringClass(), getter.name(),
+                            getter.descriptor(), getter.isPrimitive(), getter.isInterface()));
+                    hostData.factoryReaderFields.add(new FactoryEntry(
+                            getter.declaringClass(), "method", getter.name(), readerIdx));
                 }
             }
 
             for (MethodMetadata setter : accessItem.getSetters()) {
                 if (processedMembers.add(setter)) {
-                    packageFactoryImplementation.addWriter(setter);
-                    transformer.produce(new BytecodeTransformerBuildItem.Builder()
-                            .setClassToTransform(accessItem.getType().host())
-                            .setCacheable(true)
-                            .setPriority(-2)
-                            .setVisitorFunction(new HibernateAccessorSetterFunction(setter))
-                            .build());
-
-                    var implementation = new HibernateAccessorSetterImplementation(setter, accessItem.getType());
-
-                    generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getWriterName(),
-                            implementation.generateWriterBytes()));
+                    if (setter.isInterface() && setter.declaringClass().equals(host)) {
+                        hostData.isInterface = true;
+                    }
+                    int writerIdx = hostData.writers.size();
+                    hostData.writers.add(new WriteSetter(setter.declaringClass(), setter.name(),
+                            setter.descriptor(), setter.isPrimitive(), setter.isInterface()));
+                    hostData.factoryWriterFields.add(new FactoryEntry(
+                            setter.declaringClass(), "method", setter.name(), writerIdx));
                 }
             }
 
             for (ConstructorMetadata ctor : accessItem.getConstructors()) {
                 if (processedMembers.add(ctor)) {
-                    packageFactoryImplementation.addInstantiator(ctor);
-                    transformer.produce(new BytecodeTransformerBuildItem.Builder()
-                            .setClassToTransform(accessItem.getType().host())
-                            .setCacheable(true)
-                            .setPriority(-2)
-                            .setVisitorFunction(new HibernateAccessorConstructorFunction(ctor))
-                            .build());
-
-                    var implementation = new HibernateAccessorConstructorImplementation(ctor, accessItem.getType());
-
-                    generatedClasses.produce(new GeneratedClassBuildItem(true, implementation.getInstantiatorName(),
-                            implementation.generateInstantiator()));
+                    int ctorIdx = hostData.constructors.size();
+                    hostData.constructors.add(ctor);
+                    hostData.factoryCtorEntries.add(new FactoryCtorEntry(
+                            ctor.declaringClass(), ctor.descriptor(), ctorIdx));
                 }
             }
         }
-        if (packageFactoryImplementation != null) {
-            packageFactoryImplementation.create(classGizmo);
+
+        HibernateAccessorFactoryImplementation factoryImpl = new HibernateAccessorFactoryImplementation();
+
+        List<String> readerHosts = new ArrayList<>();
+        List<String> writerHosts = new ArrayList<>();
+        List<String> instantiatorHosts = new ArrayList<>();
+        Set<String> interfaceHosts = new HashSet<>();
+
+        for (Map.Entry<String, HostData> entry : hostDataMap.entrySet()) {
+            String host = entry.getKey();
+            HostData data = entry.getValue();
+
+            if (data.isInterface) {
+                interfaceHosts.add(host);
+            }
+
+            int readerClassIndex = -1;
+            if (!data.readers.isEmpty()) {
+                readerClassIndex = readerHosts.size();
+                readerHosts.add(host);
+            }
+            int writerClassIndex = -1;
+            if (!data.writers.isEmpty()) {
+                writerClassIndex = writerHosts.size();
+                writerHosts.add(host);
+            }
+            int instantiatorClassIndex = -1;
+            if (!data.constructors.isEmpty()) {
+                instantiatorClassIndex = instantiatorHosts.size();
+                instantiatorHosts.add(host);
+            }
+
+            for (FactoryEntry fe : data.factoryReaderFields) {
+                factoryImpl.addReaderEntry(fe.declaringClass(), fe.type(), fe.name(),
+                        readerClassIndex, fe.memberIndex());
+            }
+            for (FactoryEntry fe : data.factoryWriterFields) {
+                factoryImpl.addWriterEntry(fe.declaringClass(), fe.type(), fe.name(),
+                        writerClassIndex, fe.memberIndex());
+            }
+            for (FactoryCtorEntry fe : data.factoryCtorEntries) {
+                factoryImpl.addInstantiatorEntry(fe.declaringClass(), fe.descriptor(),
+                        instantiatorClassIndex, fe.ctorIndex());
+            }
+
+            transformer.produce(new BytecodeTransformerBuildItem.Builder()
+                    .setClassToTransform(host)
+                    .setCacheable(true)
+                    .setPriority(-2)
+                    .setVisitorFunction(new HibernateAccessorHostClassFunction(
+                            data.readers, data.writers, data.constructors))
+                    .build());
         }
-        factoryImplementation.create(classGizmo);
+
+        HibernateAccessorSingleImplGenerator implGen = new HibernateAccessorSingleImplGenerator();
+
+        if (!readerHosts.isEmpty()) {
+            generatedClasses.produce(new GeneratedClassBuildItem(true,
+                    HibernateAccessorSingleImplGenerator.READER_IMPL,
+                    implGen.generateReaderImpl(readerHosts, interfaceHosts)));
+        }
+        if (!writerHosts.isEmpty()) {
+            generatedClasses.produce(new GeneratedClassBuildItem(true,
+                    HibernateAccessorSingleImplGenerator.WRITER_IMPL,
+                    implGen.generateWriterImpl(writerHosts, interfaceHosts)));
+        }
+        if (!instantiatorHosts.isEmpty()) {
+            generatedClasses.produce(new GeneratedClassBuildItem(true,
+                    HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL,
+                    implGen.generateInstantiatorImpl(instantiatorHosts, interfaceHosts)));
+        }
+
+        Gizmo classGizmo = Gizmo.create(new GeneratedClassGizmo2Adaptor(generatedClasses, null, true));
+        factoryImpl.create(classGizmo);
     }
 
     @BuildStep
@@ -202,4 +256,19 @@ class HibernateAccessorProcessor {
                 recorder.createAccessorFactory(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY));
     }
 
+    private static class HostData {
+        final List<ReadMember> readers = new ArrayList<>();
+        final List<WriteMember> writers = new ArrayList<>();
+        final List<ConstructorMetadata> constructors = new ArrayList<>();
+        final List<FactoryEntry> factoryReaderFields = new ArrayList<>();
+        final List<FactoryEntry> factoryWriterFields = new ArrayList<>();
+        final List<FactoryCtorEntry> factoryCtorEntries = new ArrayList<>();
+        boolean isInterface;
+    }
+
+    private record FactoryEntry(String declaringClass, String type, String name, int memberIndex) {
+    }
+
+    private record FactoryCtorEntry(String declaringClass, String descriptor, int ctorIndex) {
+    }
 }
