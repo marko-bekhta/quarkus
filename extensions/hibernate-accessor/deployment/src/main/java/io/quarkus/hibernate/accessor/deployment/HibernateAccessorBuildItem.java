@@ -72,6 +72,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         private final String packageName;
         private final String type;
         private final String host;
+        private final boolean hostIsPublic;
         private final boolean record;
         private Set<FieldMetadata> fields;
         private Set<MethodMetadata> getters;
@@ -81,16 +82,18 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         public Builder(ClassInfo modelClass, IndexView index) {
             this.packageName = modelClass.name().packagePrefix();
             this.type = modelClass.name().toString();
-            this.host = hostClass(modelClass, index);
+            ClassInfo hostClassInfo = hostClass(modelClass, index);
+            this.host = hostClassInfo.name().toString();
+            this.hostIsPublic = Modifier.isPublic(hostClassInfo.flags());
             this.record = modelClass.isRecord();
         }
 
-        private static String hostClass(ClassInfo modelClass, IndexView index) {
+        private static ClassInfo hostClass(ClassInfo modelClass, IndexView index) {
             ClassInfo curr = modelClass;
             while (!ClassInfo.NestingType.TOP_LEVEL.equals(curr.nestingType())) {
                 curr = index.getClassByName(curr.enclosingClass());
             }
-            return curr.name().toString();
+            return curr;
         }
 
         public Builder addField(FieldInfo field) {
@@ -168,7 +171,8 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         }
 
         public HibernateAccessorBuildItem build() {
-            return new HibernateAccessorBuildItem(new TypeMetadata(packageName, type, host), fields, getters, setters,
+            return new HibernateAccessorBuildItem(new TypeMetadata(packageName, type, host, hostIsPublic), fields, getters,
+                    setters,
                     constructors);
         }
     }
@@ -200,7 +204,8 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
     public record ParameterMetadata(String name, String descriptor, boolean isPrimitive) {
     }
 
-    public record TypeMetadata(String packageName, String name, String host) implements Comparable<TypeMetadata> {
+    public record TypeMetadata(String packageName, String name, String host,
+            boolean isPublic) implements Comparable<TypeMetadata> {
 
         private static final Comparator<TypeMetadata> COMPARATOR = Comparator.comparing(TypeMetadata::packageName)
                 .thenComparing(TypeMetadata::name);

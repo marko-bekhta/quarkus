@@ -21,6 +21,7 @@ import io.quarkus.gizmo2.LocalVar;
 import io.quarkus.gizmo2.ParamVar;
 import io.quarkus.gizmo2.This;
 import io.quarkus.gizmo2.TypeArgument;
+import io.quarkus.gizmo2.desc.ClassMethodDesc;
 import io.quarkus.gizmo2.desc.ConstructorDesc;
 import io.quarkus.gizmo2.desc.FieldDesc;
 import io.quarkus.gizmo2.desc.MethodDesc;
@@ -33,6 +34,8 @@ class HibernateAccessorFactoryImplementation {
     private static final String TYPE_FIELD = "field";
     private static final String TYPE_METHOD = "method";
     private static final String TYPE_CONSTRUCTOR = "constructor";
+
+    private static final int INIT_BATCH_SIZE = 500;
 
     private final List<IndexEntry> readerEntries = new ArrayList<>();
     private final List<IndexEntry> writerEntries = new ArrayList<>();
@@ -73,6 +76,7 @@ class HibernateAccessorFactoryImplementation {
         ClassDesc readerImplClass = ClassDesc.of(HibernateAccessorSingleImplGenerator.READER_IMPL);
         ClassDesc writerImplClass = ClassDesc.of(HibernateAccessorSingleImplGenerator.WRITER_IMPL);
         ClassDesc instantiatorImplClass = ClassDesc.of(HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL);
+        ClassDesc factoryClassDesc = ClassDesc.of(QUARKUS_HIBERNATE_ACCESSOR_FACTORY);
 
         classGizmo.class_(QUARKUS_HIBERNATE_ACCESSOR_FACTORY, cc -> {
             cc.implements_(HibernateAccessorFactory.class);
@@ -106,6 +110,13 @@ class HibernateAccessorFactoryImplementation {
                 throw new RuntimeException(e);
             }
 
+            List<String> readerInitMethods = generateBatchedInitMethods(cc, "initReaders", readerEntries,
+                    readerImplClass, factoryClassDesc, mapPut);
+            List<String> writerInitMethods = generateBatchedInitMethods(cc, "initWriters", writerEntries,
+                    writerImplClass, factoryClassDesc, mapPut);
+            List<String> instantiatorInitMethods = generateBatchedInitMethods(cc, "initInstantiators",
+                    instantiatorEntries, instantiatorImplClass, factoryClassDesc, mapPut);
+
             This this_ = cc.this_();
             cc.constructor(conc -> {
                 conc.public_();
@@ -122,21 +133,19 @@ class HibernateAccessorFactoryImplementation {
                             List.of(TypeArgument.of(String.class),
                                     TypeArgument.of(HibernateAccessorInstantiator.class)))));
 
-                    for (IndexEntry entry : readerEntries) {
-                        bc.invokeInterface(mapPut, this_.field(readers),
-                                Const.of(entry.key()),
-                                bc.new_(readerImplClass, Const.of(entry.classIndex()), Const.of(entry.memberIndex())));
+                    ClassDesc mapDesc = ClassDesc.of(Map.class.getName());
+                    ClassDesc voidDesc = ClassDesc.ofDescriptor("V");
+                    for (String methodName : readerInitMethods) {
+                        bc.invokeStatic(ClassMethodDesc.of(factoryClassDesc, methodName,
+                                voidDesc, mapDesc), this_.field(readers));
                     }
-                    for (IndexEntry entry : writerEntries) {
-                        bc.invokeInterface(mapPut, this_.field(writers),
-                                Const.of(entry.key()),
-                                bc.new_(writerImplClass, Const.of(entry.classIndex()), Const.of(entry.memberIndex())));
+                    for (String methodName : writerInitMethods) {
+                        bc.invokeStatic(ClassMethodDesc.of(factoryClassDesc, methodName,
+                                voidDesc, mapDesc), this_.field(writers));
                     }
-                    for (IndexEntry entry : instantiatorEntries) {
-                        bc.invokeInterface(mapPut, this_.field(instantiators),
-                                Const.of(entry.key()),
-                                bc.new_(instantiatorImplClass, Const.of(entry.classIndex()),
-                                        Const.of(entry.memberIndex())));
+                    for (String methodName : instantiatorInitMethods) {
+                        bc.invokeStatic(ClassMethodDesc.of(factoryClassDesc, methodName,
+                                voidDesc, mapDesc), this_.field(instantiators));
                     }
 
                     bc.return_();
@@ -257,6 +266,41 @@ class HibernateAccessorFactoryImplementation {
                 });
             });
         });
+    }
+
+    private static List<String> generateBatchedInitMethods(
+            io.quarkus.gizmo2.creator.ClassCreator cc,
+            String baseName,
+            List<IndexEntry> entries,
+            ClassDesc implClass,
+            ClassDesc factoryClassDesc,
+            MethodDesc mapPut) {
+        List<String> methodNames = new ArrayList<>();
+        if (entries.isEmpty()) {
+            return methodNames;
+        }
+
+        for (int batch = 0; batch * INIT_BATCH_SIZE < entries.size(); batch++) {
+            int start = batch * INIT_BATCH_SIZE;
+            int end = Math.min(start + INIT_BATCH_SIZE, entries.size());
+            List<IndexEntry> chunk = entries.subList(start, end);
+            String methodName = baseName + batch;
+            methodNames.add(methodName);
+
+            cc.staticMethod(methodName, mc -> {
+                mc.private_();
+                ParamVar map = mc.parameter("map", Map.class);
+                mc.body(bc -> {
+                    for (IndexEntry entry : chunk) {
+                        bc.invokeInterface(mapPut, map,
+                                Const.of(entry.key()),
+                                bc.new_(implClass, Const.of(entry.classIndex()), Const.of(entry.memberIndex())));
+                    }
+                    bc.return_();
+                });
+            });
+        }
+        return methodNames;
     }
 
     record IndexEntry(String key, int classIndex, int memberIndex) {
