@@ -1,5 +1,6 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.SWITCH_CHUNK_SIZE;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 
 import java.util.List;
@@ -42,6 +43,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
         private final List<WriteMember> writers;
         private final List<ConstructorMetadata> constructors;
         private boolean isInterface;
+        private String className;
 
         HostClassVisitor(ClassVisitor visitor, List<ReadMember> readers, List<WriteMember> writers,
                 List<ConstructorMetadata> constructors) {
@@ -54,6 +56,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
         @Override
         public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
             this.isInterface = (access & ACC_INTERFACE) != 0;
+            this.className = name;
             super.visit(version, access, name, signature, superName, interfaces);
         }
 
@@ -72,12 +75,29 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
         }
 
         private void generateReadMethod() {
+            String descriptor = "(ILjava/lang/Object;)Ljava/lang/Object;";
+            int count = readers.size();
+
+            if (count <= SWITCH_CHUNK_SIZE) {
+                generateReadSwitch(READ_METHOD, descriptor, readers, 0);
+            } else {
+                for (int chunk = 0; chunk * SWITCH_CHUNK_SIZE < count; chunk++) {
+                    int start = chunk * SWITCH_CHUNK_SIZE;
+                    int end = Math.min(start + SWITCH_CHUNK_SIZE, count);
+                    generateReadSwitch(READ_METHOD + "$" + chunk, descriptor,
+                            readers.subList(start, end), start);
+                }
+                generateChunkDispatcher(READ_METHOD, descriptor, count, false);
+            }
+        }
+
+        private void generateReadSwitch(String methodName, String descriptor,
+                List<ReadMember> members, int indexOffset) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
-            MethodVisitor mv = cv.visitMethod(accessFlags, READ_METHOD,
-                    "(ILjava/lang/Object;)Ljava/lang/Object;", null, null);
+            MethodVisitor mv = cv.visitMethod(accessFlags, methodName, descriptor, null, null);
             mv.visitCode();
 
-            int count = readers.size();
+            int count = members.size();
             Label[] labels = new Label[count];
             for (int i = 0; i < count; i++) {
                 labels[i] = new Label();
@@ -85,13 +105,13 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             Label defaultLabel = new Label();
 
             mv.visitVarInsn(ILOAD, 0);
-            mv.visitTableSwitchInsn(0, count - 1, defaultLabel, labels);
+            mv.visitTableSwitchInsn(indexOffset, indexOffset + count - 1, defaultLabel, labels);
 
             for (int i = 0; i < count; i++) {
                 mv.visitLabel(labels[i]);
                 mv.visitFrame(F_SAME, 0, null, 0, null);
 
-                ReadMember member = readers.get(i);
+                ReadMember member = members.get(i);
                 String targetClass = fqcnToName(member.declaringClass());
 
                 mv.visitVarInsn(ALOAD, 1);
@@ -116,22 +136,36 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
             mv.visitLabel(defaultLabel);
             mv.visitFrame(F_SAME, 0, null, 0, null);
-            mv.visitTypeInsn(NEW, "java/lang/IllegalArgumentException");
-            mv.visitInsn(DUP);
-            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>", "()V", false);
-            mv.visitInsn(ATHROW);
+            throwIllegalArgument(mv);
 
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         }
 
         private void generateWriteMethod() {
+            String descriptor = "(ILjava/lang/Object;Ljava/lang/Object;)V";
+            int count = writers.size();
+
+            if (count <= SWITCH_CHUNK_SIZE) {
+                generateWriteSwitch(WRITE_METHOD, descriptor, writers, 0);
+            } else {
+                for (int chunk = 0; chunk * SWITCH_CHUNK_SIZE < count; chunk++) {
+                    int start = chunk * SWITCH_CHUNK_SIZE;
+                    int end = Math.min(start + SWITCH_CHUNK_SIZE, count);
+                    generateWriteSwitch(WRITE_METHOD + "$" + chunk, descriptor,
+                            writers.subList(start, end), start);
+                }
+                generateChunkDispatcher(WRITE_METHOD, descriptor, count, true);
+            }
+        }
+
+        private void generateWriteSwitch(String methodName, String descriptor,
+                List<WriteMember> members, int indexOffset) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
-            MethodVisitor mv = cv.visitMethod(accessFlags, WRITE_METHOD,
-                    "(ILjava/lang/Object;Ljava/lang/Object;)V", null, null);
+            MethodVisitor mv = cv.visitMethod(accessFlags, methodName, descriptor, null, null);
             mv.visitCode();
 
-            int count = writers.size();
+            int count = members.size();
             Label[] labels = new Label[count];
             for (int i = 0; i < count; i++) {
                 labels[i] = new Label();
@@ -139,13 +173,13 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             Label defaultLabel = new Label();
 
             mv.visitVarInsn(ILOAD, 0);
-            mv.visitTableSwitchInsn(0, count - 1, defaultLabel, labels);
+            mv.visitTableSwitchInsn(indexOffset, indexOffset + count - 1, defaultLabel, labels);
 
             for (int i = 0; i < count; i++) {
                 mv.visitLabel(labels[i]);
                 mv.visitFrame(F_SAME, 0, null, 0, null);
 
-                WriteMember member = writers.get(i);
+                WriteMember member = members.get(i);
                 String targetClass = fqcnToName(member.declaringClass());
 
                 mv.visitVarInsn(ALOAD, 1);
@@ -176,22 +210,36 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
             mv.visitLabel(defaultLabel);
             mv.visitFrame(F_SAME, 0, null, 0, null);
-            mv.visitTypeInsn(NEW, "java/lang/IllegalArgumentException");
-            mv.visitInsn(DUP);
-            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>", "()V", false);
-            mv.visitInsn(ATHROW);
+            throwIllegalArgument(mv);
 
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         }
 
         private void generateCreateMethod() {
-            int accessFlags = ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC;
-            MethodVisitor mv = cv.visitMethod(accessFlags, CREATE_METHOD,
-                    "(I[Ljava/lang/Object;)Ljava/lang/Object;", null, null);
+            String descriptor = "(I[Ljava/lang/Object;)Ljava/lang/Object;";
+            int count = constructors.size();
+
+            if (count <= SWITCH_CHUNK_SIZE) {
+                generateCreateSwitch(CREATE_METHOD, descriptor, constructors, 0);
+            } else {
+                for (int chunk = 0; chunk * SWITCH_CHUNK_SIZE < count; chunk++) {
+                    int start = chunk * SWITCH_CHUNK_SIZE;
+                    int end = Math.min(start + SWITCH_CHUNK_SIZE, count);
+                    generateCreateSwitch(CREATE_METHOD + "$" + chunk, descriptor,
+                            constructors.subList(start, end), start);
+                }
+                generateChunkDispatcher(CREATE_METHOD, descriptor, count, false);
+            }
+        }
+
+        private void generateCreateSwitch(String methodName, String descriptor,
+                List<ConstructorMetadata> ctors, int indexOffset) {
+            int accessFlags = ACC_PUBLIC | ACC_STATIC;
+            MethodVisitor mv = cv.visitMethod(accessFlags, methodName, descriptor, null, null);
             mv.visitCode();
 
-            int count = constructors.size();
+            int count = ctors.size();
             Label[] labels = new Label[count];
             for (int i = 0; i < count; i++) {
                 labels[i] = new Label();
@@ -199,13 +247,13 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             Label defaultLabel = new Label();
 
             mv.visitVarInsn(ILOAD, 0);
-            mv.visitTableSwitchInsn(0, count - 1, defaultLabel, labels);
+            mv.visitTableSwitchInsn(indexOffset, indexOffset + count - 1, defaultLabel, labels);
 
             for (int i = 0; i < count; i++) {
                 mv.visitLabel(labels[i]);
                 mv.visitFrame(F_SAME, 0, null, 0, null);
 
-                ConstructorMetadata ctor = constructors.get(i);
+                ConstructorMetadata ctor = ctors.get(i);
                 String targetClass = fqcnToName(ctor.declaringClass());
 
                 mv.visitTypeInsn(NEW, targetClass);
@@ -231,13 +279,64 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
             mv.visitLabel(defaultLabel);
             mv.visitFrame(F_SAME, 0, null, 0, null);
+            throwIllegalArgument(mv);
+
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        }
+
+        private void generateChunkDispatcher(String methodName, String descriptor,
+                int totalCount, boolean returnsVoid) {
+            int accessFlags = ACC_PUBLIC | ACC_STATIC;
+            MethodVisitor mv = cv.visitMethod(accessFlags, methodName, descriptor, null, null);
+            mv.visitCode();
+
+            int chunkCount = (totalCount + SWITCH_CHUNK_SIZE - 1) / SWITCH_CHUNK_SIZE;
+            Label[] labels = new Label[chunkCount];
+            for (int i = 0; i < chunkCount; i++) {
+                labels[i] = new Label();
+            }
+            Label defaultLabel = new Label();
+
+            mv.visitVarInsn(ILOAD, 0);
+            pushIntConst(mv, SWITCH_CHUNK_SIZE);
+            mv.visitInsn(IDIV);
+            mv.visitTableSwitchInsn(0, chunkCount - 1, defaultLabel, labels);
+
+            org.objectweb.asm.Type[] argTypes = org.objectweb.asm.Type.getArgumentTypes(descriptor);
+
+            for (int i = 0; i < chunkCount; i++) {
+                mv.visitLabel(labels[i]);
+                mv.visitFrame(F_SAME, 0, null, 0, null);
+
+                for (int a = 0, slot = 0; a < argTypes.length; a++) {
+                    mv.visitVarInsn(argTypes[a].getOpcode(ILOAD), slot);
+                    slot += argTypes[a].getSize();
+                }
+
+                mv.visitMethodInsn(INVOKESTATIC, className,
+                        methodName + "$" + i, descriptor, isInterface);
+
+                if (returnsVoid) {
+                    mv.visitInsn(RETURN);
+                } else {
+                    mv.visitInsn(ARETURN);
+                }
+            }
+
+            mv.visitLabel(defaultLabel);
+            mv.visitFrame(F_SAME, 0, null, 0, null);
+            throwIllegalArgument(mv);
+
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        }
+
+        private static void throwIllegalArgument(MethodVisitor mv) {
             mv.visitTypeInsn(NEW, "java/lang/IllegalArgumentException");
             mv.visitInsn(DUP);
             mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>", "()V", false);
             mv.visitInsn(ATHROW);
-
-            mv.visitMaxs(0, 0);
-            mv.visitEnd();
         }
 
         private static void boxPrimitive(MethodVisitor mv, String descriptor) {
