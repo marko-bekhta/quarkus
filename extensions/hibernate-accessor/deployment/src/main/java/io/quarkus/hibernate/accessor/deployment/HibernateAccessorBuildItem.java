@@ -88,6 +88,14 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             this.record = modelClass.isRecord();
         }
 
+        public Builder(String packageName, String type, String host, boolean hostIsPublic, boolean record) {
+            this.packageName = packageName;
+            this.type = type;
+            this.host = host;
+            this.hostIsPublic = hostIsPublic;
+            this.record = record;
+        }
+
         private static ClassInfo hostClass(ClassInfo modelClass, IndexView index) {
             ClassInfo curr = modelClass;
             while (!ClassInfo.NestingType.TOP_LEVEL.equals(curr.nestingType())) {
@@ -143,6 +151,14 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             this.constructors.add(new ConstructorMetadata(
                     constructor.declaringClass().name().toString(), host, descriptor, parameterDescriptors));
+            return this;
+        }
+
+        public Builder addDefaultConstructor() {
+            if (this.constructors == null) {
+                this.constructors = new HashSet<>();
+            }
+            this.constructors.add(new ConstructorMetadata(type, host, "()V", List.of()));
             return this;
         }
 
