@@ -316,6 +316,9 @@ public class ResteasyServerCommonProcessor {
                 } else {
                     pathInterfaces.add(clazz.name());
                 }
+            } else if (annotation.target().kind() == Kind.METHOD) {
+                reflectiveClass.produce(ReflectiveClassBuildItem
+                        .builder(annotation.target().asMethod().declaringClass().name().toString()).methods().build());
             }
         }
 
