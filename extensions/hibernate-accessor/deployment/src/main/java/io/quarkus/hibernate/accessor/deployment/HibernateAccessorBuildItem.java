@@ -213,6 +213,13 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
     public record TypeMetadata(String packageName, String name, String host,
             boolean isPublic) implements Comparable<TypeMetadata> {
 
+        public TypeMetadata(String packageName, String name, String host, boolean isPublic) {
+            this.packageName = packageName == null ? "" : packageName;
+            this.name = name;
+            this.host = host;
+            this.isPublic = isPublic;
+        }
+
         private static final Comparator<TypeMetadata> COMPARATOR = Comparator.comparing(TypeMetadata::packageName)
                 .thenComparing(TypeMetadata::name);
 
