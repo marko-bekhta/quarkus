@@ -95,10 +95,6 @@ class HibernateAccessorProcessor {
             BuildProducer<GeneratedClassBuildItem> generatedClasses,
             BuildProducer<BytecodeTransformerBuildItem> transformer) {
 
-        if (hibernateAccessorBuildItemList.isEmpty()) {
-            return;
-        }
-
         Map<String, HostData> hostDataMap = new LinkedHashMap<>();
         Set<Object> processedMembers = new HashSet<>();
         String currentType = null;
