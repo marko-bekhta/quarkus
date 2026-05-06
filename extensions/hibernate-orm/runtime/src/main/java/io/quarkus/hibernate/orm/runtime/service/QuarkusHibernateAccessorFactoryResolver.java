@@ -22,7 +22,7 @@ public class QuarkusHibernateAccessorFactoryResolver implements HibernateAccesso
     }
 
     @Override
-    public HibernateAccessorFactory resolveHibernateAccessorFactoryResolver() {
+    public HibernateAccessorFactory resolveHibernateAccessorFactory() {
         return hibernateAccessorFactory;
     }
 }
