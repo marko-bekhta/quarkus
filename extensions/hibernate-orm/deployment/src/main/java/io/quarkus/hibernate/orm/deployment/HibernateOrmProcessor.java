@@ -550,7 +550,7 @@ public final class HibernateOrmProcessor {
         for (String managedClassName : managedClassesOnly) {
             ClassInfo classToAccess = indexBuildItem.getIndex().getClassByName(managedClassName);
             accessorBuildItemProducer.produce(
-                    new HibernateAccessorBuildItem.Builder(classToAccess, indexBuildItem.getIndex())
+                    new HibernateAccessorBuildItem.Builder(classToAccess)
                             .all(classToAccess)
                             .build());
         }

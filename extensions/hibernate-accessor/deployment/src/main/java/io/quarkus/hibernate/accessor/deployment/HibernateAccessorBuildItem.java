@@ -9,7 +9,6 @@ import java.util.Set;
 
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.FieldInfo;
-import org.jboss.jandex.IndexView;
 import org.jboss.jandex.MethodInfo;
 import org.jboss.jandex.MethodParameterInfo;
 import org.jboss.jandex.Type;
@@ -79,12 +78,11 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         private Set<MethodMetadata> setters;
         private Set<ConstructorMetadata> constructors;
 
-        public Builder(ClassInfo modelClass, IndexView index) {
+        public Builder(ClassInfo modelClass) {
             this.packageName = modelClass.name().packagePrefix();
             this.type = modelClass.name().toString();
-            ClassInfo hostClassInfo = hostClass(modelClass, index);
-            this.host = hostClassInfo.name().toString();
-            this.hostIsPublic = Modifier.isPublic(hostClassInfo.flags());
+            this.host = modelClass.name().toString();
+            this.hostIsPublic = Modifier.isPublic(modelClass.flags());
             this.record = modelClass.isRecord();
         }
 
@@ -94,14 +92,6 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             this.host = host;
             this.hostIsPublic = hostIsPublic;
             this.record = record;
-        }
-
-        private static ClassInfo hostClass(ClassInfo modelClass, IndexView index) {
-            ClassInfo curr = modelClass;
-            while (!ClassInfo.NestingType.TOP_LEVEL.equals(curr.nestingType())) {
-                curr = index.getClassByName(curr.enclosingClass());
-            }
-            return curr;
         }
 
         public Builder addField(FieldInfo field) {

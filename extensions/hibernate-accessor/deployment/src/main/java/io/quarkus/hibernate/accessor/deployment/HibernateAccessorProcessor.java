@@ -60,13 +60,13 @@ class HibernateAccessorProcessor {
             AnnotationTarget target = annotation.target();
             switch (target.kind()) {
                 case FIELD -> builders.computeIfAbsent(target.asField().declaringClass().name().toString(),
-                        modelClass -> new Builder(index.getClassByName(modelClass), index))
+                        modelClass -> new Builder(index.getClassByName(modelClass)))
                         .addField(target.asField());
                 case METHOD -> {
                     MethodInfo method = target.asMethod();
                     Builder builder = builders.computeIfAbsent(
                             method.declaringClass().name().toString(),
-                            modelClass -> new Builder(index.getClassByName(modelClass), index));
+                            modelClass -> new Builder(index.getClassByName(modelClass)));
                     if (method.isConstructor()) {
                         builder.addConstructor(method);
                     } else if (method.parametersCount() == 0) {

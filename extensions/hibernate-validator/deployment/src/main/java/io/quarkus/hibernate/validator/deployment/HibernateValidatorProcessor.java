@@ -512,7 +512,7 @@ class HibernateValidatorProcessor {
                     contributeClass(classNamesToBeValidated, indexView, field.declaringClass());
                     contributeClassMarkedForCascadingValidation(classNamesToBeValidated, indexView, consideredAnnotation,
                             field.type());
-                    accessorBuildItem.produce(new HibernateAccessorBuildItem.Builder(field.declaringClass(), indexView)
+                    accessorBuildItem.produce(new HibernateAccessorBuildItem.Builder(field.declaringClass())
                             .addField(field)
                             .build());
                 } else if (annotation.target().kind() == AnnotationTarget.Kind.METHOD) {
@@ -524,7 +524,7 @@ class HibernateValidatorProcessor {
                             method);
                     // we need to register the method for reflection as it could be a getter
                     if (method.parametersCount() == 0 && method.returnType().kind() != Type.Kind.VOID) {
-                        accessorBuildItem.produce(new HibernateAccessorBuildItem.Builder(method.declaringClass(), indexView)
+                        accessorBuildItem.produce(new HibernateAccessorBuildItem.Builder(method.declaringClass())
                                 .addGetter(method)
                                 .build());
                     }
@@ -547,7 +547,7 @@ class HibernateValidatorProcessor {
                     if (enclosingTarget.kind() == AnnotationTarget.Kind.FIELD) {
                         contributeClass(classNamesToBeValidated, indexView, enclosingTarget.asField().declaringClass());
                         accessorBuildItem.produce(
-                                new HibernateAccessorBuildItem.Builder(enclosingTarget.asField().declaringClass(), indexView)
+                                new HibernateAccessorBuildItem.Builder(enclosingTarget.asField().declaringClass())
                                         .addField(enclosingTarget.asField())
                                         .build());
                         if (annotation.target().asType().target() != null) {
@@ -560,8 +560,7 @@ class HibernateValidatorProcessor {
                         if (enclosingTarget.asMethod().parametersCount() == 0
                                 && enclosingTarget.asMethod().returnType().kind() != Type.Kind.VOID) {
                             accessorBuildItem
-                                    .produce(new HibernateAccessorBuildItem.Builder(enclosingTarget.asMethod().declaringClass(),
-                                            indexView)
+                                    .produce(new HibernateAccessorBuildItem.Builder(enclosingTarget.asMethod().declaringClass())
                                             .addGetter(enclosingTarget.asMethod())
                                             .build());
                         }
