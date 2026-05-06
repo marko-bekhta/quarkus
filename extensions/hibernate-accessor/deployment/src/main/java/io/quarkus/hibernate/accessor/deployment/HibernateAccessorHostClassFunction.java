@@ -123,11 +123,10 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
                         boxPrimitive(mv, rf.descriptor());
                     }
                 } else if (member instanceof ReadGetter rg) {
-                    String methodDescriptor = "()" + rg.descriptor();
                     int opcode = rg.isInterface() ? INVOKEINTERFACE : INVOKEVIRTUAL;
-                    mv.visitMethodInsn(opcode, targetClass, rg.methodName(), methodDescriptor, rg.isInterface());
+                    mv.visitMethodInsn(opcode, targetClass, rg.methodName(), rg.descriptor(), rg.isInterface());
                     if (rg.isPrimitive()) {
-                        boxPrimitive(mv, rg.descriptor());
+                        boxPrimitive(mv, rg.returnDescriptor());
                     }
                 }
 
@@ -195,14 +194,22 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
                     }
                     mv.visitFieldInsn(PUTFIELD, targetClass, wf.fieldName(), wf.descriptor());
                 } else if (member instanceof WriteSetter ws) {
+                    Type paramType = Type.getArgumentTypes(ws.descriptor())[0];
                     if (ws.isPrimitive()) {
-                        AsmUtil.unboxIfRequired(mv, Type.getType(ws.descriptor()));
+                        AsmUtil.unboxIfRequired(mv, paramType);
                     } else {
-                        mv.visitTypeInsn(CHECKCAST, Type.getType(ws.descriptor()).getInternalName());
+                        mv.visitTypeInsn(CHECKCAST, paramType.getInternalName());
                     }
-                    String methodDescriptor = "(" + ws.descriptor() + ")V";
                     int opcode = ws.isInterface() ? INVOKEINTERFACE : INVOKEVIRTUAL;
-                    mv.visitMethodInsn(opcode, targetClass, ws.methodName(), methodDescriptor, ws.isInterface());
+                    mv.visitMethodInsn(opcode, targetClass, ws.methodName(), ws.descriptor(), ws.isInterface());
+                    if (!"V".equals(ws.returnDescriptor())) {
+                        Type returnType = Type.getType(ws.returnDescriptor());
+                        if (returnType.getSize() == 2) {
+                            mv.visitInsn(POP2);
+                        } else {
+                            mv.visitInsn(POP);
+                        }
+                    }
                 }
 
                 mv.visitInsn(RETURN);
@@ -371,7 +378,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
     }
 
     record ReadGetter(String declaringClass, String methodName, String descriptor,
-            boolean isPrimitive, boolean isInterface) implements ReadMember {
+            boolean isPrimitive, boolean isInterface, String returnDescriptor) implements ReadMember {
     }
 
     sealed interface WriteMember {
@@ -388,6 +395,6 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
     }
 
     record WriteSetter(String declaringClass, String methodName, String descriptor,
-            boolean isPrimitive, boolean isInterface) implements WriteMember {
+            boolean isPrimitive, boolean isInterface, String returnDescriptor) implements WriteMember {
     }
 }

@@ -136,7 +136,7 @@ class HibernateAccessorProcessor {
                     }
                     int readerIdx = hostData.readers.size();
                     hostData.readers.add(new ReadGetter(getter.declaringClass(), getter.name(),
-                            getter.descriptor(), getter.isPrimitive(), getter.isInterface()));
+                            getter.descriptor(), getter.isPrimitive(), getter.isInterface(), getter.returnDescriptor()));
                     hostData.factoryReaderFields.add(new FactoryEntry(
                             getter.declaringClass(), "method", getter.name(), readerIdx));
                 }
@@ -149,7 +149,7 @@ class HibernateAccessorProcessor {
                     }
                     int writerIdx = hostData.writers.size();
                     hostData.writers.add(new WriteSetter(setter.declaringClass(), setter.name(),
-                            setter.descriptor(), setter.isPrimitive(), setter.isInterface()));
+                            setter.descriptor(), setter.isPrimitive(), setter.isInterface(), setter.returnDescriptor()));
                     hostData.factoryWriterFields.add(new FactoryEntry(
                             setter.declaringClass(), "method", setter.name(), writerIdx));
                 }

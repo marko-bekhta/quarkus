@@ -120,9 +120,9 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
                 this.getters = new HashSet<>();
             }
             Type returnType = getter.returnType();
-            this.getters.add(new MethodMetadata(getter.name(), returnType.descriptor(),
+            this.getters.add(new MethodMetadata(getter.name(), getter.descriptor(),
                     returnType.kind() == Type.Kind.PRIMITIVE, getter.declaringClass().name().toString(), host,
-                    Modifier.isInterface(getter.declaringClass().flags())));
+                    Modifier.isInterface(getter.declaringClass().flags()), returnType.descriptor()));
 
             return this;
         }
@@ -132,9 +132,9 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
                 this.setters = new HashSet<>();
             }
             Type valueType = setter.parameterType(0);
-            this.setters.add(new MethodMetadata(setter.name(), valueType.descriptor(), valueType.kind() == Type.Kind.PRIMITIVE,
+            this.setters.add(new MethodMetadata(setter.name(), setter.descriptor(), valueType.kind() == Type.Kind.PRIMITIVE,
                     setter.declaringClass().name().toString(), host,
-                    Modifier.isInterface(setter.declaringClass().flags())));
+                    Modifier.isInterface(setter.declaringClass().flags()), setter.returnType().descriptor()));
 
             return this;
         }
@@ -216,7 +216,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
     }
 
     public record MethodMetadata(String name, String descriptor, boolean isPrimitive,
-            String declaringClass, String host, boolean isInterface) implements MemberMetadata {
+            String declaringClass, String host, boolean isInterface, String returnDescriptor) implements MemberMetadata {
     }
 
     public record ConstructorMetadata(String declaringClass, String host, String descriptor,
