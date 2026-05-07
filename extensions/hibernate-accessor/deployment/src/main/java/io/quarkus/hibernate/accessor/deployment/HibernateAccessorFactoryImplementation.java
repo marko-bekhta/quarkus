@@ -1,308 +1,463 @@
 package io.quarkus.hibernate.accessor.deployment;
 
-import java.lang.constant.ClassDesc;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.emitStringSwitch;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.pushIntConst;
+
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
-import org.hibernate.accessor.HibernateAccessorFactory;
-import org.hibernate.accessor.HibernateAccessorInstantiator;
-import org.hibernate.accessor.HibernateAccessorValueReader;
-import org.hibernate.accessor.HibernateAccessorValueWriter;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 
-import io.quarkus.gizmo2.Const;
-import io.quarkus.gizmo2.Expr;
-import io.quarkus.gizmo2.GenericType;
-import io.quarkus.gizmo2.LocalVar;
-import io.quarkus.gizmo2.ParamVar;
-import io.quarkus.gizmo2.This;
-import io.quarkus.gizmo2.TypeArgument;
-import io.quarkus.gizmo2.desc.ClassMethodDesc;
-import io.quarkus.gizmo2.desc.ConstructorDesc;
-import io.quarkus.gizmo2.desc.FieldDesc;
-import io.quarkus.gizmo2.desc.MethodDesc;
-
-class HibernateAccessorFactoryImplementation {
+class HibernateAccessorFactoryImplementation implements Opcodes {
 
     static final String QUARKUS_HIBERNATE_ACCESSOR_FACTORY = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory";
 
-    private static final String KEY_FORMAT = "%s.%s.%s";
-    private static final String TYPE_FIELD = "field";
-    private static final String TYPE_METHOD = "method";
-    private static final String TYPE_CONSTRUCTOR = "constructor";
+    static final String FIELD_READER_LOOKUP = "$$__hibernateFieldReaderLookup";
+    static final String METHOD_READER_LOOKUP = "$$__hibernateMethodReaderLookup";
+    static final String FIELD_WRITER_LOOKUP = "$$__hibernateFieldWriterLookup";
+    static final String METHOD_WRITER_LOOKUP = "$$__hibernateMethodWriterLookup";
+    static final String INSTANTIATOR_LOOKUP = "$$__hibernateInstantiatorLookup";
+
+    private static final String FACTORY_INTERNAL = fqcnToName(QUARKUS_HIBERNATE_ACCESSOR_FACTORY);
+
+    private static final String READER_IMPL_INTERNAL = fqcnToName(
+            HibernateAccessorSingleImplGenerator.READER_IMPL);
+    private static final String WRITER_IMPL_INTERNAL = fqcnToName(
+            HibernateAccessorSingleImplGenerator.WRITER_IMPL);
+    private static final String INSTANTIATOR_IMPL_INTERNAL = fqcnToName(
+            HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL);
+
+    private static final String READER_INTERFACE = "org/hibernate/accessor/HibernateAccessorValueReader";
+    private static final String WRITER_INTERFACE = "org/hibernate/accessor/HibernateAccessorValueWriter";
+    private static final String INSTANTIATOR_INTERFACE = "org/hibernate/accessor/HibernateAccessorInstantiator";
+    private static final String FACTORY_INTERFACE = "org/hibernate/accessor/HibernateAccessorFactory";
+
+    private static final String NAMING_UTIL = "io/quarkus/hibernate/accessor/runtime/spi/NamingUtil";
+
+    private static final String LOOKUP_DESCRIPTOR = "(Ljava/lang/String;)I";
 
     private static final int INIT_BATCH_SIZE = 500;
 
-    private final List<IndexEntry> readerEntries = new ArrayList<>();
-    private final List<IndexEntry> writerEntries = new ArrayList<>();
-    private final List<IndexEntry> instantiatorEntries = new ArrayList<>();
+    private final List<ArrayEntry> fieldReaderEntries = new ArrayList<>();
+    private final List<ArrayEntry> methodReaderEntries = new ArrayList<>();
+    private final List<ArrayEntry> fieldWriterEntries = new ArrayList<>();
+    private final List<ArrayEntry> methodWriterEntries = new ArrayList<>();
+    private final List<ArrayEntry> instantiatorEntries = new ArrayList<>();
+
+    private final Map<String, String> dispatchTargets = new LinkedHashMap<>();
+    private final Set<String> interfaceTargets = new HashSet<>();
 
     void addReaderEntry(String declaringClass, String type, String name, int classIndex, int memberIndex) {
-        readerEntries.add(new IndexEntry(
-                KEY_FORMAT.formatted(declaringClass, type, name), classIndex, memberIndex));
+        if ("field".equals(type)) {
+            fieldReaderEntries.add(new ArrayEntry(declaringClass, name, classIndex, memberIndex));
+        } else {
+            methodReaderEntries.add(new ArrayEntry(declaringClass, name, classIndex, memberIndex));
+        }
     }
 
     void addWriterEntry(String declaringClass, String type, String name, int classIndex, int memberIndex) {
-        writerEntries.add(new IndexEntry(
-                KEY_FORMAT.formatted(declaringClass, type, name), classIndex, memberIndex));
+        if ("field".equals(type)) {
+            fieldWriterEntries.add(new ArrayEntry(declaringClass, name, classIndex, memberIndex));
+        } else {
+            methodWriterEntries.add(new ArrayEntry(declaringClass, name, classIndex, memberIndex));
+        }
     }
 
     void addInstantiatorEntry(String declaringClass, String descriptor, int classIndex, int ctorIndex) {
-        instantiatorEntries.add(new IndexEntry(
-                KEY_FORMAT.formatted(declaringClass, TYPE_CONSTRUCTOR, descriptor), classIndex, ctorIndex));
+        instantiatorEntries.add(new ArrayEntry(declaringClass, descriptor, classIndex, ctorIndex));
     }
 
-    void addFieldReader(String declaringClass, String fieldName, int classIndex, int memberIndex) {
-        addReaderEntry(declaringClass, TYPE_FIELD, fieldName, classIndex, memberIndex);
-    }
-
-    void addFieldWriter(String declaringClass, String fieldName, int classIndex, int memberIndex) {
-        addWriterEntry(declaringClass, TYPE_FIELD, fieldName, classIndex, memberIndex);
-    }
-
-    void addMethodReader(String declaringClass, String methodName, int classIndex, int memberIndex) {
-        addReaderEntry(declaringClass, TYPE_METHOD, methodName, classIndex, memberIndex);
-    }
-
-    void addMethodWriter(String declaringClass, String methodName, int classIndex, int memberIndex) {
-        addWriterEntry(declaringClass, TYPE_METHOD, methodName, classIndex, memberIndex);
-    }
-
-    void create(io.quarkus.gizmo2.Gizmo classGizmo) {
-        ClassDesc readerImplClass = ClassDesc.of(HibernateAccessorSingleImplGenerator.READER_IMPL);
-        ClassDesc writerImplClass = ClassDesc.of(HibernateAccessorSingleImplGenerator.WRITER_IMPL);
-        ClassDesc instantiatorImplClass = ClassDesc.of(HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL);
-        ClassDesc factoryClassDesc = ClassDesc.of(QUARKUS_HIBERNATE_ACCESSOR_FACTORY);
-
-        classGizmo.class_(QUARKUS_HIBERNATE_ACCESSOR_FACTORY, cc -> {
-            cc.implements_(HibernateAccessorFactory.class);
-            cc.public_();
-
-            FieldDesc readers = cc.field("readers", fc -> {
-                fc.private_();
-                fc.final_();
-                fc.setType(GenericType.of(Map.class,
-                        List.of(TypeArgument.of(String.class), TypeArgument.of(HibernateAccessorValueReader.class))));
-            });
-            FieldDesc writers = cc.field("writers", fc -> {
-                fc.private_();
-                fc.final_();
-                fc.setType(GenericType.of(Map.class,
-                        List.of(TypeArgument.of(String.class), TypeArgument.of(HibernateAccessorValueWriter.class))));
-            });
-            FieldDesc instantiators = cc.field("instantiators", fc -> {
-                fc.private_();
-                fc.final_();
-                fc.setType(GenericType.of(Map.class,
-                        List.of(TypeArgument.of(String.class), TypeArgument.of(HibernateAccessorInstantiator.class))));
-            });
-
-            final MethodDesc mapPut;
-            final MethodDesc mapGet;
-            try {
-                mapPut = MethodDesc.of(Map.class.getDeclaredMethod("put", Object.class, Object.class));
-                mapGet = MethodDesc.of(Map.class.getDeclaredMethod("get", Object.class));
-            } catch (NoSuchMethodException e) {
-                throw new RuntimeException(e);
-            }
-
-            List<String> readerInitMethods = generateBatchedInitMethods(cc, "initReaders", readerEntries,
-                    readerImplClass, factoryClassDesc, mapPut);
-            List<String> writerInitMethods = generateBatchedInitMethods(cc, "initWriters", writerEntries,
-                    writerImplClass, factoryClassDesc, mapPut);
-            List<String> instantiatorInitMethods = generateBatchedInitMethods(cc, "initInstantiators",
-                    instantiatorEntries, instantiatorImplClass, factoryClassDesc, mapPut);
-
-            This this_ = cc.this_();
-            cc.constructor(conc -> {
-                conc.public_();
-                conc.body(bc -> {
-                    bc.invokeSpecial(ConstructorDesc.of(cc.superClass()), conc.this_());
-
-                    bc.set(this_.field(readers), bc.new_(GenericType.of(HashMap.class,
-                            List.of(TypeArgument.of(String.class),
-                                    TypeArgument.of(HibernateAccessorValueReader.class)))));
-                    bc.set(this_.field(writers), bc.new_(GenericType.of(HashMap.class,
-                            List.of(TypeArgument.of(String.class),
-                                    TypeArgument.of(HibernateAccessorValueWriter.class)))));
-                    bc.set(this_.field(instantiators), bc.new_(GenericType.of(HashMap.class,
-                            List.of(TypeArgument.of(String.class),
-                                    TypeArgument.of(HibernateAccessorInstantiator.class)))));
-
-                    ClassDesc mapDesc = ClassDesc.of(Map.class.getName());
-                    ClassDesc voidDesc = ClassDesc.ofDescriptor("V");
-                    for (String methodName : readerInitMethods) {
-                        bc.invokeStatic(ClassMethodDesc.of(factoryClassDesc, methodName,
-                                voidDesc, mapDesc), this_.field(readers));
-                    }
-                    for (String methodName : writerInitMethods) {
-                        bc.invokeStatic(ClassMethodDesc.of(factoryClassDesc, methodName,
-                                voidDesc, mapDesc), this_.field(writers));
-                    }
-                    for (String methodName : instantiatorInitMethods) {
-                        bc.invokeStatic(ClassMethodDesc.of(factoryClassDesc, methodName,
-                                voidDesc, mapDesc), this_.field(instantiators));
-                    }
-
-                    bc.return_();
-                });
-            });
-
-            cc.method("instantiator", mc -> {
-                mc.public_();
-                mc.returning(HibernateAccessorInstantiator.class);
-                ParamVar constructor = mc.parameter("constructor", Constructor.class);
-                mc.body(bc -> {
-                    Expr declClass = bc.invokeVirtual(
-                            MethodDesc.of(Constructor.class, "getDeclaringClass", Class.class), constructor);
-                    Expr className = bc.invokeVirtual(MethodDesc.of(Class.class, "getName", String.class), declClass);
-                    Expr descriptor = bc.invokeStatic(
-                            MethodDesc.of(
-                                    io.quarkus.hibernate.accessor.runtime.spi.NamingUtil.class,
-                                    "constructorDescriptor", String.class, Constructor.class),
-                            constructor);
-                    Expr key = bc.invokeVirtual(
-                            MethodDesc.of(String.class, "formatted", String.class, Object[].class),
-                            Const.of(KEY_FORMAT),
-                            bc.newArray(Object.class, className, Const.of(TYPE_CONSTRUCTOR), descriptor));
-                    LocalVar inst = bc.localVar("inst", HibernateAccessorInstantiator.class,
-                            bc.invokeInterface(mapGet, this_.field(instantiators), key));
-                    bc.ifElse(
-                            bc.isNull(inst),
-                            b1 -> b1.throw_(UnsupportedOperationException.class),
-                            b1 -> b1.return_(inst));
-                });
-            });
-
-            cc.method("valueReader", mc -> {
-                mc.public_();
-                mc.returning(HibernateAccessorValueReader.class);
-                ParamVar field = mc.parameter("field", Field.class);
-                mc.body(bc -> {
-                    Expr declClass = bc.invokeVirtual(
-                            MethodDesc.of(Field.class, "getDeclaringClass", Class.class), field);
-                    Expr className = bc.invokeVirtual(MethodDesc.of(Class.class, "getName", String.class), declClass);
-                    Expr memberName = bc.invokeVirtual(MethodDesc.of(Field.class, "getName", String.class), field);
-                    Expr key = bc.invokeVirtual(
-                            MethodDesc.of(String.class, "formatted", String.class, Object[].class),
-                            Const.of(KEY_FORMAT),
-                            bc.newArray(Object.class, className, Const.of(TYPE_FIELD), memberName));
-                    LocalVar reader = bc.localVar("reader", HibernateAccessorValueReader.class,
-                            bc.invokeInterface(mapGet, this_.field(readers), key));
-                    bc.ifElse(
-                            bc.isNull(reader),
-                            b1 -> b1.throw_(UnsupportedOperationException.class),
-                            b1 -> b1.return_(reader));
-                });
-            });
-
-            cc.method("valueReader", mc -> {
-                mc.public_();
-                mc.returning(HibernateAccessorValueReader.class);
-                ParamVar method = mc.parameter("method", Method.class);
-                mc.body(bc -> {
-                    Expr declClass = bc.invokeVirtual(
-                            MethodDesc.of(Method.class, "getDeclaringClass", Class.class), method);
-                    Expr className = bc.invokeVirtual(MethodDesc.of(Class.class, "getName", String.class), declClass);
-                    Expr memberName = bc.invokeVirtual(MethodDesc.of(Method.class, "getName", String.class), method);
-                    Expr key = bc.invokeVirtual(
-                            MethodDesc.of(String.class, "formatted", String.class, Object[].class),
-                            Const.of(KEY_FORMAT),
-                            bc.newArray(Object.class, className, Const.of(TYPE_METHOD), memberName));
-                    LocalVar reader = bc.localVar("reader", HibernateAccessorValueReader.class,
-                            bc.invokeInterface(mapGet, this_.field(readers), key));
-                    bc.ifElse(
-                            bc.isNull(reader),
-                            b1 -> b1.throw_(UnsupportedOperationException.class),
-                            b1 -> b1.return_(reader));
-                });
-            });
-
-            cc.method("valueWriter", mc -> {
-                mc.public_();
-                mc.returning(HibernateAccessorValueWriter.class);
-                ParamVar field = mc.parameter("field", Field.class);
-                mc.body(bc -> {
-                    Expr declClass = bc.invokeVirtual(
-                            MethodDesc.of(Field.class, "getDeclaringClass", Class.class), field);
-                    Expr className = bc.invokeVirtual(MethodDesc.of(Class.class, "getName", String.class), declClass);
-                    Expr memberName = bc.invokeVirtual(MethodDesc.of(Field.class, "getName", String.class), field);
-                    Expr key = bc.invokeVirtual(
-                            MethodDesc.of(String.class, "formatted", String.class, Object[].class),
-                            Const.of(KEY_FORMAT),
-                            bc.newArray(Object.class, className, Const.of(TYPE_FIELD), memberName));
-                    LocalVar writer = bc.localVar("writer", HibernateAccessorValueWriter.class,
-                            bc.invokeInterface(mapGet, this_.field(writers), key));
-                    bc.ifElse(
-                            bc.isNull(writer),
-                            b1 -> b1.throw_(UnsupportedOperationException.class),
-                            b1 -> b1.return_(writer));
-                });
-            });
-
-            cc.method("valueWriter", mc -> {
-                mc.public_();
-                mc.returning(HibernateAccessorValueWriter.class);
-                ParamVar method = mc.parameter("method", Method.class);
-                mc.body(bc -> {
-                    Expr declClass = bc.invokeVirtual(
-                            MethodDesc.of(Method.class, "getDeclaringClass", Class.class), method);
-                    Expr className = bc.invokeVirtual(MethodDesc.of(Class.class, "getName", String.class), declClass);
-                    Expr memberName = bc.invokeVirtual(MethodDesc.of(Method.class, "getName", String.class), method);
-                    Expr key = bc.invokeVirtual(
-                            MethodDesc.of(String.class, "formatted", String.class, Object[].class),
-                            Const.of(KEY_FORMAT),
-                            bc.newArray(Object.class, className, Const.of(TYPE_METHOD), memberName));
-                    LocalVar writer = bc.localVar("writer", HibernateAccessorValueWriter.class,
-                            bc.invokeInterface(mapGet, this_.field(writers), key));
-                    bc.ifElse(
-                            bc.isNull(writer),
-                            b1 -> b1.throw_(UnsupportedOperationException.class),
-                            b1 -> b1.return_(writer));
-                });
-            });
-        });
-    }
-
-    private static List<String> generateBatchedInitMethods(
-            io.quarkus.gizmo2.creator.ClassCreator cc,
-            String baseName,
-            List<IndexEntry> entries,
-            ClassDesc implClass,
-            ClassDesc factoryClassDesc,
-            MethodDesc mapPut) {
-        List<String> methodNames = new ArrayList<>();
-        if (entries.isEmpty()) {
-            return methodNames;
+    void registerDispatchTarget(String declaringClassFqcn, String dispatchTargetInternal, boolean isInterface) {
+        dispatchTargets.put(declaringClassFqcn, dispatchTargetInternal);
+        if (isInterface) {
+            interfaceTargets.add(dispatchTargetInternal);
         }
+    }
+
+    byte[] generate() {
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+
+        cw.visit(V17, ACC_PUBLIC | ACC_SUPER, FACTORY_INTERNAL, null,
+                "java/lang/Object", new String[] { FACTORY_INTERFACE });
+
+        generateArrayField(cw, "FIELD_READERS", READER_IMPL_INTERNAL);
+        generateArrayField(cw, "METHOD_READERS", READER_IMPL_INTERNAL);
+        generateArrayField(cw, "FIELD_WRITERS", WRITER_IMPL_INTERNAL);
+        generateArrayField(cw, "METHOD_WRITERS", WRITER_IMPL_INTERNAL);
+        generateArrayField(cw, "INSTANTIATORS", INSTANTIATOR_IMPL_INTERNAL);
+
+        generateClinit(cw);
+        generateConstructor(cw);
+
+        generateValueReaderField(cw);
+        generateValueReaderMethod(cw);
+        generateValueWriterField(cw);
+        generateValueWriterMethod(cw);
+        generateInstantiator(cw);
+
+        generateLookupMethod(cw, "lookupFieldReader", fieldReaderEntries, FIELD_READER_LOOKUP);
+        generateLookupMethod(cw, "lookupMethodReader", methodReaderEntries, METHOD_READER_LOOKUP);
+        generateLookupMethod(cw, "lookupFieldWriter", fieldWriterEntries, FIELD_WRITER_LOOKUP);
+        generateLookupMethod(cw, "lookupMethodWriter", methodWriterEntries, METHOD_WRITER_LOOKUP);
+        generateLookupMethod(cw, "lookupInstantiator", instantiatorEntries, INSTANTIATOR_LOOKUP);
+
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    private static void generateArrayField(ClassWriter cw, String name, String elementType) {
+        cw.visitField(ACC_PRIVATE | ACC_STATIC | ACC_FINAL, name,
+                "[L" + elementType + ";", null, null).visitEnd();
+    }
+
+    private void generateClinit(ClassWriter cw) {
+        MethodVisitor mv = cw.visitMethod(ACC_STATIC, "<clinit>", "()V", null, null);
+        mv.visitCode();
+
+        boolean hasReaders = !fieldReaderEntries.isEmpty() || !methodReaderEntries.isEmpty();
+        boolean hasWriters = !fieldWriterEntries.isEmpty() || !methodWriterEntries.isEmpty();
+        boolean hasInstantiators = !instantiatorEntries.isEmpty();
+
+        List<String> initMethods = new ArrayList<>();
+
+        if (hasReaders) {
+            emitArrayInit(mv, "FIELD_READERS", READER_IMPL_INTERNAL, fieldReaderEntries);
+            emitArrayInit(mv, "METHOD_READERS", READER_IMPL_INTERNAL, methodReaderEntries);
+            generateBatchedInitMethods(cw, "initFieldReaders", fieldReaderEntries, READER_IMPL_INTERNAL,
+                    "FIELD_READERS", initMethods);
+            generateBatchedInitMethods(cw, "initMethodReaders", methodReaderEntries, READER_IMPL_INTERNAL,
+                    "METHOD_READERS", initMethods);
+        }
+        if (hasWriters) {
+            emitArrayInit(mv, "FIELD_WRITERS", WRITER_IMPL_INTERNAL, fieldWriterEntries);
+            emitArrayInit(mv, "METHOD_WRITERS", WRITER_IMPL_INTERNAL, methodWriterEntries);
+            generateBatchedInitMethods(cw, "initFieldWriters", fieldWriterEntries, WRITER_IMPL_INTERNAL,
+                    "FIELD_WRITERS", initMethods);
+            generateBatchedInitMethods(cw, "initMethodWriters", methodWriterEntries, WRITER_IMPL_INTERNAL,
+                    "METHOD_WRITERS", initMethods);
+        }
+        if (hasInstantiators) {
+            emitArrayInit(mv, "INSTANTIATORS", INSTANTIATOR_IMPL_INTERNAL, instantiatorEntries);
+            generateBatchedInitMethods(cw, "initInstantiators", instantiatorEntries, INSTANTIATOR_IMPL_INTERNAL,
+                    "INSTANTIATORS", initMethods);
+        }
+
+        for (String methodName : initMethods) {
+            mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, methodName, "()V", false);
+        }
+
+        mv.visitInsn(RETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    private static void emitArrayInit(MethodVisitor mv, String fieldName, String elementType,
+            List<ArrayEntry> entries) {
+        pushIntConst(mv, entries.size());
+        mv.visitTypeInsn(ANEWARRAY, elementType);
+        mv.visitFieldInsn(PUTSTATIC, FACTORY_INTERNAL, fieldName, "[L" + elementType + ";");
+    }
+
+    private static void generateBatchedInitMethods(ClassWriter cw, String baseName,
+            List<ArrayEntry> entries, String implType, String arrayField, List<String> methodNames) {
+        if (entries.isEmpty()) {
+            return;
+        }
+        String arrayDesc = "[L" + implType + ";";
 
         for (int batch = 0; batch * INIT_BATCH_SIZE < entries.size(); batch++) {
             int start = batch * INIT_BATCH_SIZE;
             int end = Math.min(start + INIT_BATCH_SIZE, entries.size());
-            List<IndexEntry> chunk = entries.subList(start, end);
-            String methodName = baseName + batch;
+            String methodName = baseName + "$" + batch;
             methodNames.add(methodName);
 
-            cc.staticMethod(methodName, mc -> {
-                mc.private_();
-                ParamVar map = mc.parameter("map", Map.class);
-                mc.body(bc -> {
-                    for (IndexEntry entry : chunk) {
-                        bc.invokeInterface(mapPut, map,
-                                Const.of(entry.key()),
-                                bc.new_(implClass, Const.of(entry.classIndex()), Const.of(entry.memberIndex())));
-                    }
-                    bc.return_();
-                });
-            });
+            MethodVisitor mv = cw.visitMethod(ACC_PRIVATE | ACC_STATIC, methodName, "()V", null, null);
+            mv.visitCode();
+
+            mv.visitFieldInsn(GETSTATIC, FACTORY_INTERNAL, arrayField, arrayDesc);
+            mv.visitVarInsn(ASTORE, 0);
+
+            for (int i = start; i < end; i++) {
+                ArrayEntry entry = entries.get(i);
+                mv.visitVarInsn(ALOAD, 0);
+                pushIntConst(mv, i);
+                mv.visitTypeInsn(NEW, implType);
+                mv.visitInsn(DUP);
+                pushIntConst(mv, entry.classIndex());
+                pushIntConst(mv, entry.memberIndex());
+                mv.visitMethodInsn(INVOKESPECIAL, implType, "<init>", "(II)V", false);
+                mv.visitInsn(AASTORE);
+            }
+
+            mv.visitInsn(RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
         }
-        return methodNames;
     }
 
-    record IndexEntry(String key, int classIndex, int memberIndex) {
+    private static void generateConstructor(ClassWriter cw) {
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
+        mv.visitCode();
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        mv.visitInsn(RETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    // valueReader(Field) -> lookupFieldReader(className, fieldName) -> FIELD_READERS[idx]
+    private static void generateValueReaderField(ClassWriter cw) {
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "valueReader",
+                "(Ljava/lang/reflect/Field;)L" + READER_INTERFACE + ";", null, null);
+        mv.visitCode();
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getDeclaringClass",
+                "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 2);
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 3);
+
+        mv.visitVarInsn(ALOAD, 2);
+        mv.visitVarInsn(ALOAD, 3);
+        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupFieldReader",
+                "(Ljava/lang/String;Ljava/lang/String;)I", false);
+        mv.visitVarInsn(ISTORE, 4);
+
+        emitArrayReturnOrThrow(mv, "FIELD_READERS", READER_IMPL_INTERNAL, 4);
+
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    private static void generateValueReaderMethod(ClassWriter cw) {
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "valueReader",
+                "(Ljava/lang/reflect/Method;)L" + READER_INTERFACE + ";", null, null);
+        mv.visitCode();
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Method", "getDeclaringClass",
+                "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 2);
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Method", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 3);
+
+        mv.visitVarInsn(ALOAD, 2);
+        mv.visitVarInsn(ALOAD, 3);
+        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupMethodReader",
+                "(Ljava/lang/String;Ljava/lang/String;)I", false);
+        mv.visitVarInsn(ISTORE, 4);
+
+        emitArrayReturnOrThrow(mv, "METHOD_READERS", READER_IMPL_INTERNAL, 4);
+
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    private static void generateValueWriterField(ClassWriter cw) {
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "valueWriter",
+                "(Ljava/lang/reflect/Field;)L" + WRITER_INTERFACE + ";", null, null);
+        mv.visitCode();
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getDeclaringClass",
+                "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 2);
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 3);
+
+        mv.visitVarInsn(ALOAD, 2);
+        mv.visitVarInsn(ALOAD, 3);
+        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupFieldWriter",
+                "(Ljava/lang/String;Ljava/lang/String;)I", false);
+        mv.visitVarInsn(ISTORE, 4);
+
+        emitArrayReturnOrThrow(mv, "FIELD_WRITERS", WRITER_IMPL_INTERNAL, 4);
+
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    private static void generateValueWriterMethod(ClassWriter cw) {
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "valueWriter",
+                "(Ljava/lang/reflect/Method;)L" + WRITER_INTERFACE + ";", null, null);
+        mv.visitCode();
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Method", "getDeclaringClass",
+                "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 2);
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Method", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 3);
+
+        mv.visitVarInsn(ALOAD, 2);
+        mv.visitVarInsn(ALOAD, 3);
+        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupMethodWriter",
+                "(Ljava/lang/String;Ljava/lang/String;)I", false);
+        mv.visitVarInsn(ISTORE, 4);
+
+        emitArrayReturnOrThrow(mv, "METHOD_WRITERS", WRITER_IMPL_INTERNAL, 4);
+
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    private static void generateInstantiator(ClassWriter cw) {
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "instantiator",
+                "(Ljava/lang/reflect/Constructor;)L" + INSTANTIATOR_INTERFACE + ";",
+                null, null);
+        mv.visitCode();
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Constructor", "getDeclaringClass",
+                "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
+                "()Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 2);
+
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKESTATIC, NAMING_UTIL, "constructorDescriptor",
+                "(Ljava/lang/reflect/Constructor;)Ljava/lang/String;", false);
+        mv.visitVarInsn(ASTORE, 3);
+
+        mv.visitVarInsn(ALOAD, 2);
+        mv.visitVarInsn(ALOAD, 3);
+        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupInstantiator",
+                "(Ljava/lang/String;Ljava/lang/String;)I", false);
+        mv.visitVarInsn(ISTORE, 4);
+
+        emitArrayReturnOrThrow(mv, "INSTANTIATORS", INSTANTIATOR_IMPL_INTERNAL, 4);
+
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    private static void emitArrayReturnOrThrow(MethodVisitor mv, String arrayField,
+            String elementType, int idxLocal) {
+        Label throwLabel = new Label();
+        mv.visitVarInsn(ILOAD, idxLocal);
+        mv.visitJumpInsn(IFLT, throwLabel);
+
+        mv.visitFieldInsn(GETSTATIC, FACTORY_INTERNAL, arrayField, "[L" + elementType + ";");
+        mv.visitVarInsn(ILOAD, idxLocal);
+        mv.visitInsn(AALOAD);
+        mv.visitInsn(ARETURN);
+
+        mv.visitLabel(throwLabel);
+        mv.visitFrame(F_FULL, 5,
+                new Object[] { FACTORY_INTERNAL, "java/lang/Object", "java/lang/String",
+                        "java/lang/String", INTEGER },
+                0, null);
+        mv.visitTypeInsn(NEW, "java/lang/UnsupportedOperationException");
+        mv.visitInsn(DUP);
+        mv.visitVarInsn(ALOAD, 2);
+        mv.visitLdcInsn(".");
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/String", "concat",
+                "(Ljava/lang/String;)Ljava/lang/String;", false);
+        mv.visitVarInsn(ALOAD, 3);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/String", "concat",
+                "(Ljava/lang/String;)Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/UnsupportedOperationException",
+                "<init>", "(Ljava/lang/String;)V", false);
+        mv.visitInsn(ATHROW);
+    }
+
+    // Generates: static int lookupXxx(String className, String memberName) { ... }
+    // Outer switch on className delegates to host class lookup, adds base offset.
+    // Locals: slot 0 = className, slot 1 = memberName, slot 2 = outer temp, slot 3 = localIdx
+    private void generateLookupMethod(ClassWriter cw, String methodName,
+            List<ArrayEntry> entries, String hostLookupMethodName) {
+        MethodVisitor mv = cw.visitMethod(ACC_PRIVATE | ACC_STATIC, methodName,
+                "(Ljava/lang/String;Ljava/lang/String;)I", null, null);
+        mv.visitCode();
+
+        if (entries.isEmpty()) {
+            pushIntConst(mv, -1);
+            mv.visitInsn(IRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+            return;
+        }
+
+        // Compute unique classes and their base offsets from the entries list
+        Map<String, Integer> classBaseOffsets = new LinkedHashMap<>();
+        for (int i = 0; i < entries.size(); i++) {
+            classBaseOffsets.putIfAbsent(entries.get(i).declaringClass(), i);
+        }
+
+        List<String> classNames = classBaseOffsets.keySet().stream().toList();
+        Label defaultLabel = new Label();
+
+        // Single-level string switch on className (slot 0, temp in slot 2)
+        emitStringSwitch(mv, 0, 2, classNames, defaultLabel, (caseMv, classIdx) -> {
+            String className = classNames.get(classIdx);
+            String target = dispatchTargets.get(className);
+            int baseOffset = classBaseOffsets.get(className);
+
+            // int localIdx = DispatchTarget.hostLookupMethod(memberName);
+            caseMv.visitVarInsn(ALOAD, 1);
+            caseMv.visitMethodInsn(INVOKESTATIC, target, hostLookupMethodName,
+                    LOOKUP_DESCRIPTOR, interfaceTargets.contains(target));
+            caseMv.visitVarInsn(ISTORE, 3);
+
+            // if (localIdx < 0) goto default
+            caseMv.visitVarInsn(ILOAD, 3);
+            Label notFound = new Label();
+            caseMv.visitJumpInsn(IFLT, notFound);
+
+            // return baseOffset + localIdx
+            if (baseOffset == 0) {
+                caseMv.visitVarInsn(ILOAD, 3);
+            } else {
+                pushIntConst(caseMv, baseOffset);
+                caseMv.visitVarInsn(ILOAD, 3);
+                caseMv.visitInsn(IADD);
+            }
+            caseMv.visitInsn(IRETURN);
+
+            caseMv.visitLabel(notFound);
+            caseMv.visitFrame(F_SAME, 0, null, 0, null);
+            caseMv.visitJumpInsn(GOTO, defaultLabel);
+        });
+
+        // default: return -1
+        mv.visitLabel(defaultLabel);
+        mv.visitFrame(F_SAME, 0, null, 0, null);
+        pushIntConst(mv, -1);
+        mv.visitInsn(IRETURN);
+
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    record ArrayEntry(String declaringClass, String memberName, int classIndex, int memberIndex) {
     }
 }

@@ -1,8 +1,16 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.FIELD_READER_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.FIELD_WRITER_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.INSTANTIATOR_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.METHOD_READER_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.METHOD_WRITER_LOOKUP;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.SWITCH_CHUNK_SIZE;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.emitStringSwitch;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.pushIntConst;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiFunction;
 
@@ -71,7 +79,75 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             if (!constructors.isEmpty()) {
                 generateCreateMethod();
             }
+
+            generateLookupMethods();
+
             super.visitEnd();
+        }
+
+        private void generateLookupMethods() {
+            List<String> fieldReaderNames = new ArrayList<>();
+            List<String> methodReaderNames = new ArrayList<>();
+            for (ReadMember rm : readers) {
+                if (rm instanceof ReadField rf) {
+                    fieldReaderNames.add(rf.fieldName());
+                } else if (rm instanceof ReadGetter rg) {
+                    methodReaderNames.add(rg.methodName());
+                }
+            }
+
+            List<String> fieldWriterNames = new ArrayList<>();
+            List<String> methodWriterNames = new ArrayList<>();
+            for (WriteMember wm : writers) {
+                if (wm instanceof WriteField wf) {
+                    fieldWriterNames.add(wf.fieldName());
+                } else if (wm instanceof WriteSetter ws) {
+                    methodWriterNames.add(ws.methodName());
+                }
+            }
+
+            List<String> instantiatorDescs = new ArrayList<>();
+            for (ConstructorMetadata ctor : constructors) {
+                instantiatorDescs.add(ctor.descriptor());
+            }
+
+            if (!fieldReaderNames.isEmpty()) {
+                generateNameLookup(FIELD_READER_LOOKUP, fieldReaderNames);
+            }
+            if (!methodReaderNames.isEmpty()) {
+                generateNameLookup(METHOD_READER_LOOKUP, methodReaderNames);
+            }
+            if (!fieldWriterNames.isEmpty()) {
+                generateNameLookup(FIELD_WRITER_LOOKUP, fieldWriterNames);
+            }
+            if (!methodWriterNames.isEmpty()) {
+                generateNameLookup(METHOD_WRITER_LOOKUP, methodWriterNames);
+            }
+            if (!instantiatorDescs.isEmpty()) {
+                generateNameLookup(INSTANTIATOR_LOOKUP, instantiatorDescs);
+            }
+        }
+
+        private void generateNameLookup(String methodName, List<String> names) {
+            MethodVisitor mv = cv.visitMethod(ACC_PUBLIC | ACC_STATIC, methodName,
+                    "(Ljava/lang/String;)I", null, null);
+            mv.visitCode();
+
+            Label defaultLabel = new Label();
+
+            // slot 0 = name param, slot 1 = temp
+            emitStringSwitch(mv, 0, 1, names, defaultLabel, (caseMv, caseIdx) -> {
+                pushIntConst(caseMv, caseIdx);
+                caseMv.visitInsn(IRETURN);
+            });
+
+            mv.visitLabel(defaultLabel);
+            mv.visitFrame(F_SAME, 0, null, 0, null);
+            pushIntConst(mv, -1);
+            mv.visitInsn(IRETURN);
+
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
         }
 
         private void generateReadMethod() {
@@ -135,7 +211,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
             mv.visitLabel(defaultLabel);
             mv.visitFrame(F_SAME, 0, null, 0, null);
-            throwIllegalArgument(mv);
+            throwIllegalArgumentWithIndex(mv, className);
 
             mv.visitMaxs(0, 0);
             mv.visitEnd();
@@ -217,7 +293,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
             mv.visitLabel(defaultLabel);
             mv.visitFrame(F_SAME, 0, null, 0, null);
-            throwIllegalArgument(mv);
+            throwIllegalArgumentWithIndex(mv, className);
 
             mv.visitMaxs(0, 0);
             mv.visitEnd();
@@ -286,7 +362,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
             mv.visitLabel(defaultLabel);
             mv.visitFrame(F_SAME, 0, null, 0, null);
-            throwIllegalArgument(mv);
+            throwIllegalArgumentWithIndex(mv, className);
 
             mv.visitMaxs(0, 0);
             mv.visitEnd();
@@ -333,16 +409,30 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
             mv.visitLabel(defaultLabel);
             mv.visitFrame(F_SAME, 0, null, 0, null);
-            throwIllegalArgument(mv);
+            throwIllegalArgumentWithIndex(mv, className);
 
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         }
 
-        private static void throwIllegalArgument(MethodVisitor mv) {
+        private static void throwIllegalArgumentWithIndex(MethodVisitor mv, String hostClass) {
             mv.visitTypeInsn(NEW, "java/lang/IllegalArgumentException");
             mv.visitInsn(DUP);
-            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>", "()V", false);
+            mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
+            mv.visitInsn(DUP);
+            mv.visitLdcInsn("Unknown member index ");
+            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>",
+                    "(Ljava/lang/String;)V", false);
+            mv.visitVarInsn(ILOAD, 0);
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                    "(I)Ljava/lang/StringBuilder;", false);
+            mv.visitLdcInsn(" for " + hostClass.replace('/', '.'));
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                    "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false);
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString",
+                    "()Ljava/lang/String;", false);
+            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>",
+                    "(Ljava/lang/String;)V", false);
             mv.visitInsn(ATHROW);
         }
 
@@ -351,18 +441,6 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             Type wrapperType = AsmUtil.autobox(primitiveType);
             mv.visitMethodInsn(INVOKESTATIC, wrapperType.getInternalName(), "valueOf",
                     Type.getMethodDescriptor(wrapperType, primitiveType), false);
-        }
-
-        private static void pushIntConst(MethodVisitor mv, int value) {
-            if (value >= -1 && value <= 5) {
-                mv.visitInsn(ICONST_0 + value);
-            } else if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) {
-                mv.visitIntInsn(BIPUSH, value);
-            } else if (value >= Short.MIN_VALUE && value <= Short.MAX_VALUE) {
-                mv.visitIntInsn(SIPUSH, value);
-            } else {
-                mv.visitLdcInsn(value);
-            }
         }
     }
 

@@ -165,7 +165,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
 
         mv.visitLabel(defaultLabel);
         mv.visitFrame(F_SAME, 0, null, 0, null);
-        throwIllegalArgument(mv);
+        throwIllegalArgumentWithClassIndex(mv, className);
     }
 
     private static void generateWriteDispatchSwitch(MethodVisitor mv, String className,
@@ -200,7 +200,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
 
         mv.visitLabel(defaultLabel);
         mv.visitFrame(F_SAME, 0, null, 0, null);
-        throwIllegalArgument(mv);
+        throwIllegalArgumentWithClassIndex(mv, className);
     }
 
     private void generateChunkedDispatch(ClassWriter cw, String className,
@@ -282,7 +282,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
 
         mv.visitLabel(defaultLabel);
         mv.visitFrame(F_SAME, 0, null, 0, null);
-        throwIllegalArgument(mv);
+        throwIllegalArgumentWithClassIndex(mv, className);
     }
 
     private static void generateWriteDispatchSwitchWithOffset(MethodVisitor mv, String className,
@@ -317,7 +317,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
 
         mv.visitLabel(defaultLabel);
         mv.visitFrame(F_SAME, 0, null, 0, null);
-        throwIllegalArgument(mv);
+        throwIllegalArgumentWithClassIndex(mv, className);
     }
 
     private static void generateImplChunkDispatcher(ClassWriter cw, String className,
@@ -366,16 +366,29 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
 
         mv.visitLabel(defaultLabel);
         mv.visitFrame(F_SAME, 0, null, 0, null);
-        throwIllegalArgument(mv);
+        throwIllegalArgumentWithClassIndex(mv, className);
 
         mv.visitMaxs(0, 0);
         mv.visitEnd();
     }
 
-    private static void throwIllegalArgument(MethodVisitor mv) {
+    private static void throwIllegalArgumentWithClassIndex(MethodVisitor mv, String implClassName) {
         mv.visitTypeInsn(NEW, "java/lang/IllegalArgumentException");
         mv.visitInsn(DUP);
-        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>", "()V", false);
+        // message = "Unknown class index " + this.classIndex
+        mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
+        mv.visitInsn(DUP);
+        mv.visitLdcInsn("Unknown class index ");
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>",
+                "(Ljava/lang/String;)V", false);
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitFieldInsn(GETFIELD, implClassName, "classIndex", "I");
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
+                "(I)Ljava/lang/StringBuilder;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString",
+                "()Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>",
+                "(Ljava/lang/String;)V", false);
         mv.visitInsn(ATHROW);
     }
 
