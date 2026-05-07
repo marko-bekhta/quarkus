@@ -6,6 +6,11 @@ import org.hibernate.boot.registry.StandardServiceInitiator;
 import org.hibernate.property.access.spi.HibernateAccessorFactoryResolver;
 import org.hibernate.service.spi.ServiceRegistryImplementor;
 
+/**
+ * Hibernate {@link StandardServiceInitiator} that registers the Quarkus-specific
+ * {@link QuarkusHibernateAccessorFactoryResolver} into the service registry, enabling
+ * Hibernate to use build-time-generated accessors instead of runtime reflection.
+ */
 public class QuarkusHibernateAccessorFactoryResolverInitiator
         implements StandardServiceInitiator<HibernateAccessorFactoryResolver> {
 

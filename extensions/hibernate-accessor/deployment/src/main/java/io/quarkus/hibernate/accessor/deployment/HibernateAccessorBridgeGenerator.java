@@ -9,6 +9,15 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
+/**
+ * Generates public bridge classes for non-public (package-private) host entity classes.
+ * <p>
+ * The generated singleton reader/writer/instantiator impls live in a fixed runtime package
+ * and cannot directly call static methods on package-private classes. This generator creates
+ * a synthetic public class ({@code OriginalClass$$HibernateAccessorBridge}) in the same package
+ * as the host, containing public static forwarding methods that delegate to the host's injected
+ * {@code $$__hibernateRead}, {@code $$__hibernateWrite}, and {@code $$__hibernateCreate} methods.
+ */
 class HibernateAccessorBridgeGenerator implements Opcodes {
 
     static final String BRIDGE_SUFFIX = "$$HibernateAccessorBridge";
@@ -42,6 +51,7 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
         return cw.toByteArray();
     }
 
+    // Generates a public static synthetic method that loads all args and forwards to the host.
     private static void generateForward(ClassWriter cw, String methodName, String descriptor,
             String hostName, boolean returnsVoid) {
         MethodVisitor mv = cw.visitMethod(ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC,

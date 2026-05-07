@@ -16,6 +16,24 @@ import io.quarkus.deployment.util.AsmUtil;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ParameterMetadata;
 
+/**
+ * ASM bytecode transformation function that injects three public static methods into a host
+ * entity class:
+ * <ul>
+ * <li>{@code $$__hibernateRead(int memberIndex, Object target) → Object} — reads a field value
+ * or invokes a getter on the target, dispatching via a table-switch on memberIndex.</li>
+ * <li>{@code $$__hibernateWrite(int memberIndex, Object target, Object value) → void} — sets a
+ * field value or invokes a setter on the target.</li>
+ * <li>{@code $$__hibernateCreate(int ctorIndex, Object[] args) → Object} — creates a new instance
+ * using the constructor identified by ctorIndex.</li>
+ * </ul>
+ * Primitive values are auto-boxed on read and auto-unboxed on write.
+ * <p>
+ * When a host class has more than {@value HibernateAccessorGenerationUtil#SWITCH_CHUNK_SIZE}
+ * members, the switch is split into chunk methods (e.g. {@code $$__hibernateRead$0},
+ * {@code $$__hibernateRead$1}) and a dispatcher method routes to the correct chunk by dividing
+ * the memberIndex.
+ */
 class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisitor, ClassVisitor>, Opcodes {
 
     static final String READ_METHOD = "$$__hibernateRead";
@@ -74,6 +92,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             super.visitEnd();
         }
 
+        // Generates $$__hibernateRead — reads field or invokes getter, returns boxed Object.
         private void generateReadMethod() {
             String descriptor = "(ILjava/lang/Object;)Ljava/lang/Object;";
             int count = readers.size();
@@ -91,6 +110,8 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             }
         }
 
+        // Generates a single switch block covering members[indexOffset..indexOffset+members.size()).
+        // Each case: cast target to declaring class, read field or invoke getter, box if primitive, return.
         private void generateReadSwitch(String methodName, String descriptor,
                 List<ReadMember> members, int indexOffset) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
@@ -142,6 +163,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             mv.visitEnd();
         }
 
+        // Generates $$__hibernateWrite — sets field or invokes setter with unboxed value.
         private void generateWriteMethod() {
             String descriptor = "(ILjava/lang/Object;Ljava/lang/Object;)V";
             int count = writers.size();
@@ -159,6 +181,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             }
         }
 
+        // Each case: cast target, unbox/cast value, set field or invoke setter, return void.
         private void generateWriteSwitch(String methodName, String descriptor,
                 List<WriteMember> members, int indexOffset) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
@@ -216,6 +239,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             mv.visitEnd();
         }
 
+        // Generates $$__hibernateCreate — instantiates via constructor, unboxing args from Object[].
         private void generateCreateMethod() {
             String descriptor = "(I[Ljava/lang/Object;)Ljava/lang/Object;";
             int count = constructors.size();
@@ -233,6 +257,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             }
         }
 
+        // Each case: NEW + DUP, load and unbox each arg from Object[], INVOKESPECIAL <init>, return.
         private void generateCreateSwitch(String methodName, String descriptor,
                 List<ConstructorMetadata> ctors, int indexOffset) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
@@ -285,6 +310,8 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             mv.visitEnd();
         }
 
+        // For >1000 members: generates a top-level dispatcher that divides memberIndex by
+        // SWITCH_CHUNK_SIZE and forwards to the appropriate chunk method (methodName$0, $1, ...).
         private void generateChunkDispatcher(String methodName, String descriptor,
                 int totalCount, boolean returnsVoid) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
@@ -339,6 +366,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             mv.visitInsn(ATHROW);
         }
 
+        // Boxes a primitive on top of the stack via the corresponding wrapper's valueOf() method.
         private static void boxPrimitive(MethodVisitor mv, String descriptor) {
             Type primitiveType = Type.getType(descriptor);
             Type wrapperType = AsmUtil.autobox(primitiveType);
@@ -346,6 +374,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
                     Type.getMethodDescriptor(wrapperType, primitiveType), false);
         }
 
+        // Emits the most compact bytecode for loading an int constant (ICONST, BIPUSH, SIPUSH, or LDC).
         private static void pushIntConst(MethodVisitor mv, int value) {
             if (value >= -1 && value <= 5) {
                 mv.visitInsn(ICONST_0 + value);
@@ -359,6 +388,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
         }
     }
 
+    // Sealed hierarchy describing what to read from an entity: either a field (GETFIELD) or a getter method.
     sealed interface ReadMember {
         String declaringClass();
 
@@ -374,6 +404,7 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             boolean isPrimitive, boolean isInterface) implements ReadMember {
     }
 
+    // Sealed hierarchy describing what to write on an entity: either a field (PUTFIELD) or a setter method.
     sealed interface WriteMember {
         String declaringClass();
 

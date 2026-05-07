@@ -17,6 +17,23 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
+/**
+ * Generates singleton implementations of Hibernate's accessor interfaces:
+ * <ul>
+ * <li>{@code QuarkusHibernateAccessorValueReaderImpl} — implements {@code HibernateAccessorValueReader<Object>}
+ * with a {@code get(Object target)} method.</li>
+ * <li>{@code QuarkusHibernateAccessorValueWriterImpl} — implements {@code HibernateAccessorValueWriter}
+ * with a {@code set(Object target, Object value)} method.</li>
+ * <li>{@code QuarkusHibernateAccessorInstantiatorImpl} — implements {@code HibernateAccessorInstantiator<Object>}
+ * with a {@code create(Object... args)} method.</li>
+ * </ul>
+ * Each impl stores a {@code classIndex} and {@code memberIndex} pair. On invocation, it uses a
+ * two-level dispatch: switch on classIndex to select the host class, then delegates to the
+ * host's injected static method (e.g. {@code $$__hibernateRead}) passing the memberIndex.
+ * <p>
+ * For large numbers of host classes ({@literal >} {@value HibernateAccessorGenerationUtil#SWITCH_CHUNK_SIZE}),
+ * the dispatch is chunked into private methods to stay within JVM method size limits.
+ */
 class HibernateAccessorSingleImplGenerator implements Opcodes {
 
     static final String READER_IMPL = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorValueReaderImpl";
@@ -27,6 +44,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
     private static final String WRITER_INTERFACE = fqcnToName(HibernateAccessorValueWriter.class.getName());
     private static final String INSTANTIATOR_INTERFACE = fqcnToName(HibernateAccessorInstantiator.class.getName());
 
+    // Generates get(Object target): switches on classIndex, calls host's $$__hibernateRead.
     byte[] generateReaderImpl(List<String> hostClasses, Set<String> interfaceHosts) {
         String className = fqcnToName(READER_IMPL);
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
@@ -55,6 +73,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         return cw.toByteArray();
     }
 
+    // Generates set(Object target, Object value): switches on classIndex, calls host's $$__hibernateWrite.
     byte[] generateWriterImpl(List<String> hostClasses, Set<String> interfaceHosts) {
         String className = fqcnToName(WRITER_IMPL);
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
@@ -81,6 +100,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         return cw.toByteArray();
     }
 
+    // Generates create(Object... args): switches on classIndex, calls host's $$__hibernateCreate.
     byte[] generateInstantiatorImpl(List<String> hostClasses, Set<String> interfaceHosts) {
         String className = fqcnToName(INSTANTIATOR_IMPL);
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
@@ -109,11 +129,13 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         return cw.toByteArray();
     }
 
+    // Declares the two final int fields that identify which host class and member this instance targets.
     private static void generateIndexFields(ClassWriter cw) {
         cw.visitField(ACC_PRIVATE | ACC_FINAL, "classIndex", "I", null, null).visitEnd();
         cw.visitField(ACC_PRIVATE | ACC_FINAL, "memberIndex", "I", null, null).visitEnd();
     }
 
+    // Generates <init>(int classIndex, int memberIndex) that stores both indices.
     private static void generateIndexConstructor(ClassWriter cw, String className) {
         MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", "(II)V", null, null);
         mv.visitCode();
@@ -134,6 +156,8 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         mv.visitEnd();
     }
 
+    // Generates a table-switch on classIndex: each case loads this.memberIndex + the target arg,
+    // then invokes the host's static accessor method (e.g. $$__hibernateRead).
     private static void generateDispatchSwitch(MethodVisitor mv, String className,
             List<String> hostClasses, Set<String> interfaceHosts,
             String staticMethodName, String staticMethodDesc, int targetArgSlot) {
@@ -168,6 +192,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         throwIllegalArgument(mv);
     }
 
+    // Write-specific dispatch: passes (memberIndex, target, value) to host's $$__hibernateWrite.
     private static void generateWriteDispatchSwitch(MethodVisitor mv, String className,
             List<String> hostClasses, Set<String> interfaceHosts) {
         int count = hostClasses.size();
@@ -203,6 +228,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         throwIllegalArgument(mv);
     }
 
+    // For >1000 host classes: splits the dispatch into private chunk methods and a public dispatcher.
     private void generateChunkedDispatch(ClassWriter cw, String className,
             String publicMethodName, String publicMethodDesc,
             List<String> hostClasses, Set<String> interfaceHosts,
@@ -320,6 +346,8 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         throwIllegalArgument(mv);
     }
 
+    // Generates the public method that routes to private chunk methods by dividing classIndex
+    // by SWITCH_CHUNK_SIZE and switching on the quotient.
     private static void generateImplChunkDispatcher(ClassWriter cw, String className,
             String publicMethodName, String publicMethodDesc,
             int chunkCount, boolean returnsVoid) {

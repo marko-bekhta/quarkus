@@ -39,6 +39,21 @@ import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFuncti
 import io.quarkus.hibernate.accessor.runtime.HibernateAccessorRecorder;
 import io.quarkus.hibernate.accessor.runtime.ReflectionFreeAccessor;
 
+/**
+ * Main build-time processor for the Hibernate Accessor extension.
+ * <p>
+ * This extension eliminates runtime reflection for Hibernate entity property access by generating
+ * optimized bytecode at build time. The pipeline works in three phases:
+ * <ol>
+ * <li>{@link #findExtraTypesToProcess} — scans the Jandex index for {@link ReflectionFreeAccessor} annotations
+ * on fields, methods, and constructors, producing {@link HibernateAccessorBuildItem}s that describe what to generate.</li>
+ * <li>{@link #generateDirectAccessors} — for each host class, injects static {@code $$__hibernateRead},
+ * {@code $$__hibernateWrite}, and {@code $$__hibernateCreate} methods (via ASM bytecode transformation),
+ * generates singleton reader/writer/instantiator implementations, bridge classes for non-public hosts,
+ * and a central factory that maps reflection objects to their pre-generated accessors.</li>
+ * <li>{@link #accessFActory} — records a static-init step that instantiates the generated factory at runtime.</li>
+ * </ol>
+ */
 class HibernateAccessorProcessor {
 
     private static final DotName REFLECTION_FREE_ACCESSOR = DotName.createSimple(ReflectionFreeAccessor.class);
@@ -48,6 +63,11 @@ class HibernateAccessorProcessor {
         features.produce(new FeatureBuildItem(Feature.HIBERNATE_ACCESSOR));
     }
 
+    /**
+     * Scans the Jandex index for all {@link ReflectionFreeAccessor} annotations and groups them
+     * by declaring class. Fields become direct read/write accessors; zero-parameter methods become
+     * getters; single-parameter methods become setters; constructors are recorded for instantiator generation.
+     */
     @BuildStep
     void findExtraTypesToProcess(
             CombinedIndexBuildItem combinedIndexBuildItem,
@@ -89,13 +109,30 @@ class HibernateAccessorProcessor {
 
     }
 
+    /**
+     * Core generation step. Aggregates all {@link HibernateAccessorBuildItem}s per host class, then:
+     * <ul>
+     * <li>Injects {@code $$__hibernateRead/Write/Create} static methods into each host class via
+     * {@link HibernateAccessorHostClassFunction} (ASM bytecode transformation).</li>
+     * <li>Generates bridge classes for non-public hosts so the factory can reach them.</li>
+     * <li>Generates singleton {@code HibernateAccessorValueReaderImpl}, {@code WriterImpl}, and
+     * {@code InstantiatorImpl} classes that dispatch to the injected host methods via a two-level
+     * switch: first on classIndex (which host), then on memberIndex (which field/method/ctor).</li>
+     * <li>Generates {@code QuarkusHibernateAccessorFactory} that maps reflection {@code Field},
+     * {@code Method}, and {@code Constructor} objects to the pre-generated accessor instances.</li>
+     * </ul>
+     */
     @BuildStep
     void generateDirectAccessors(
             List<HibernateAccessorBuildItem> hibernateAccessorBuildItemList,
             BuildProducer<GeneratedClassBuildItem> generatedClasses,
             BuildProducer<BytecodeTransformerBuildItem> transformer) {
 
+        // Collects per-host-class data: readers, writers, constructors, and factory index entries.
+        // Uses LinkedHashMap to preserve insertion order — classIndex values depend on iteration order.
         Map<String, HostData> hostDataMap = new LinkedHashMap<>();
+        // Deduplicates members when the same field/method appears in multiple build items
+        // (e.g. from both ORM and Envers scanning the same entity).
         Set<Object> processedMembers = new HashSet<>();
         String currentType = null;
 
@@ -168,6 +205,8 @@ class HibernateAccessorProcessor {
         HibernateAccessorFactoryImplementation factoryImpl = new HibernateAccessorFactoryImplementation();
         HibernateAccessorBridgeGenerator bridgeGen = new HibernateAccessorBridgeGenerator();
 
+        // These lists track which host classes have readers/writers/constructors.
+        // Their indices become the classIndex values used in the generated switch dispatchers.
         List<String> readerHosts = new ArrayList<>();
         List<String> writerHosts = new ArrayList<>();
         List<String> instantiatorHosts = new ArrayList<>();
@@ -181,6 +220,8 @@ class HibernateAccessorProcessor {
                 interfaceHosts.add(host);
             }
 
+            // Non-public (package-private) classes can't be called from the generated singleton impls,
+            // so we create a public bridge class in the same package that forwards calls.
             boolean needsBridge = !data.isPublic && !data.isInterface;
             String dispatchTarget = needsBridge ? HibernateAccessorBridgeGenerator.bridgeFqcn(host) : host;
 
@@ -253,6 +294,9 @@ class HibernateAccessorProcessor {
         factoryImpl.create(classGizmo);
     }
 
+    /**
+     * Registers the generated factory class for reflective instantiation (needed for native image).
+     */
     @BuildStep
     void registerForReflection(
             BuildProducer<ReflectiveClassBuildItem> reflectiveClass) {
@@ -260,6 +304,10 @@ class HibernateAccessorProcessor {
                 .builder(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY).constructors().build());
     }
 
+    /**
+     * Records a static-init step that instantiates the generated {@code QuarkusHibernateAccessorFactory}
+     * at runtime and wraps it in a build item for consumption by the Hibernate ORM extension.
+     */
     @BuildStep
     @Record(ExecutionTime.STATIC_INIT)
     HibernateAccessorFactoryBuildItem accessFActory(
@@ -268,6 +316,11 @@ class HibernateAccessorProcessor {
                 recorder.createAccessorFactory(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY));
     }
 
+    /**
+     * Accumulates all accessor metadata for a single host class (the top-level class
+     * that inner/nested entity classes belong to). Tracks readers, writers, constructors,
+     * and their corresponding factory index entries.
+     */
     private static class HostData {
         final List<ReadMember> readers = new ArrayList<>();
         final List<WriteMember> writers = new ArrayList<>();
@@ -279,9 +332,11 @@ class HibernateAccessorProcessor {
         boolean isPublic = true;
     }
 
+    // Maps a field or method to its position within its host class for the factory lookup key.
     private record FactoryEntry(String declaringClass, String type, String name, int memberIndex) {
     }
 
+    // Maps a constructor to its position within its host class for the factory lookup key.
     private record FactoryCtorEntry(String declaringClass, String descriptor, int ctorIndex) {
     }
 }

@@ -5,6 +5,10 @@ import org.hibernate.accessor.HibernateAccessorFactory;
 import io.quarkus.builder.item.SimpleBuildItem;
 import io.quarkus.runtime.RuntimeValue;
 
+/**
+ * Carries the runtime-initialized {@link HibernateAccessorFactory} instance so that
+ * the Hibernate ORM extension can register it in the service registry.
+ */
 public final class HibernateAccessorFactoryBuildItem extends SimpleBuildItem {
 
     private final RuntimeValue<HibernateAccessorFactory> hibernateAccessorFactory;

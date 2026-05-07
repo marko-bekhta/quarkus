@@ -26,17 +26,36 @@ import io.quarkus.gizmo2.desc.ConstructorDesc;
 import io.quarkus.gizmo2.desc.FieldDesc;
 import io.quarkus.gizmo2.desc.MethodDesc;
 
+/**
+ * Generates the {@code QuarkusHibernateAccessorFactory} class using the Gizmo2 bytecode API.
+ * <p>
+ * The generated factory implements {@link HibernateAccessorFactory} and contains three
+ * {@link HashMap} fields (readers, writers, instantiators) that map composite string keys
+ * (format: {@code "declaringClass.type.name"}) to pre-generated accessor instances.
+ * <p>
+ * Hibernate calls {@code valueReader(Field)}, {@code valueReader(Method)}, {@code valueWriter(Field)},
+ * {@code valueWriter(Method)}, or {@code instantiator(Constructor)} at runtime. Each method
+ * builds the lookup key from the reflection object and retrieves the corresponding singleton
+ * reader/writer/instantiator from the map.
+ * <p>
+ * Initialization of the maps is split into batched static methods ({@value INIT_BATCH_SIZE} entries
+ * each) to avoid exceeding the JVM's 64KB method bytecode limit.
+ */
 class HibernateAccessorFactoryImplementation {
 
     static final String QUARKUS_HIBERNATE_ACCESSOR_FACTORY = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory";
 
+    // Composite key format: "declaringClassName.memberType.memberName"
+    // e.g. "com.example.MyEntity.field.name" or "com.example.MyEntity.constructor.(Ljava/lang/String;)V"
     private static final String KEY_FORMAT = "%s.%s.%s";
     private static final String TYPE_FIELD = "field";
     private static final String TYPE_METHOD = "method";
     private static final String TYPE_CONSTRUCTOR = "constructor";
 
+    // Max entries per init method to stay within JVM bytecode size limits.
     private static final int INIT_BATCH_SIZE = 500;
 
+    // Accumulated entries from the processor; consumed once by create().
     private final List<IndexEntry> readerEntries = new ArrayList<>();
     private final List<IndexEntry> writerEntries = new ArrayList<>();
     private final List<IndexEntry> instantiatorEntries = new ArrayList<>();
@@ -72,6 +91,11 @@ class HibernateAccessorFactoryImplementation {
         addWriterEntry(declaringClass, TYPE_METHOD, methodName, classIndex, memberIndex);
     }
 
+    /**
+     * Generates the {@code QuarkusHibernateAccessorFactory} class bytecode.
+     * The generated class has three HashMap fields populated at construction time,
+     * and lookup methods that build keys from reflection objects to find the right accessor.
+     */
     void create(io.quarkus.gizmo2.Gizmo classGizmo) {
         ClassDesc readerImplClass = ClassDesc.of(HibernateAccessorSingleImplGenerator.READER_IMPL);
         ClassDesc writerImplClass = ClassDesc.of(HibernateAccessorSingleImplGenerator.WRITER_IMPL);
@@ -268,6 +292,12 @@ class HibernateAccessorFactoryImplementation {
         });
     }
 
+    /**
+     * Splits map initialization into multiple static methods of at most {@value INIT_BATCH_SIZE}
+     * entries each. Each generated method (e.g. initReaders0, initReaders1, ...) puts a batch
+     * of key→accessor entries into the map. The factory constructor calls all batch methods
+     * in sequence.
+     */
     private static List<String> generateBatchedInitMethods(
             io.quarkus.gizmo2.creator.ClassCreator cc,
             String baseName,
@@ -303,6 +333,8 @@ class HibernateAccessorFactoryImplementation {
         return methodNames;
     }
 
+    // Triplet linking a lookup key to the (classIndex, memberIndex) pair used to construct
+    // the singleton reader/writer/instantiator impl instance.
     record IndexEntry(String key, int classIndex, int memberIndex) {
     }
 }
