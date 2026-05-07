@@ -5,6 +5,8 @@ import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClas
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.READ_METHOD;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WRITE_METHOD;
 
+import java.util.List;
+
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -17,7 +19,8 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
         return hostFqcn + BRIDGE_SUFFIX;
     }
 
-    byte[] generate(String hostFqcn, boolean hasReaders, boolean hasWriters, boolean hasConstructors) {
+    byte[] generate(String hostFqcn, boolean hasReaders, boolean hasWriters, boolean hasConstructors,
+            List<String> lookupMethods) {
         String bridgeName = fqcnToName(bridgeFqcn(hostFqcn));
         String hostName = fqcnToName(hostFqcn);
 
@@ -38,6 +41,10 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
                     "(I[Ljava/lang/Object;)Ljava/lang/Object;", hostName, false);
         }
 
+        for (String lookupMethod : lookupMethods) {
+            generateForward(cw, lookupMethod, "(Ljava/lang/String;)I", hostName, false);
+        }
+
         cw.visitEnd();
         return cw.toByteArray();
     }
@@ -56,11 +63,8 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
 
         mv.visitMethodInsn(INVOKESTATIC, hostName, methodName, descriptor, false);
 
-        if (returnsVoid) {
-            mv.visitInsn(RETURN);
-        } else {
-            mv.visitInsn(ARETURN);
-        }
+        org.objectweb.asm.Type returnType = org.objectweb.asm.Type.getReturnType(descriptor);
+        mv.visitInsn(returnType.getOpcode(IRETURN));
 
         mv.visitMaxs(argTypes.length, argTypes.length);
         mv.visitEnd();

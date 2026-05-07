@@ -1,5 +1,12 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.FIELD_READER_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.FIELD_WRITER_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.INSTANTIATOR_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.METHOD_READER_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorFactoryImplementation.METHOD_WRITER_LOOKUP;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -15,7 +22,6 @@ import org.jboss.jandex.IndexView;
 import org.jboss.jandex.MethodInfo;
 
 import io.quarkus.deployment.Feature;
-import io.quarkus.deployment.GeneratedClassGizmo2Adaptor;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
@@ -25,7 +31,6 @@ import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedClassBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
-import io.quarkus.gizmo2.Gizmo;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.Builder;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
@@ -183,15 +188,10 @@ class HibernateAccessorProcessor {
 
             boolean needsBridge = !data.isPublic && !data.isInterface;
             String dispatchTarget = needsBridge ? HibernateAccessorBridgeGenerator.bridgeFqcn(host) : host;
+            String dispatchTargetInternal = fqcnToName(dispatchTarget);
 
-            if (needsBridge) {
-                generatedClasses.produce(new GeneratedClassBuildItem(true,
-                        HibernateAccessorBridgeGenerator.bridgeFqcn(host),
-                        bridgeGen.generate(host,
-                                !data.readers.isEmpty(),
-                                !data.writers.isEmpty(),
-                                !data.constructors.isEmpty())));
-            }
+            // Collect which lookup methods this host needs (for bridge forwarding)
+            List<String> lookupMethods = new ArrayList<>();
 
             int readerClassIndex = -1;
             if (!data.readers.isEmpty()) {
@@ -209,17 +209,72 @@ class HibernateAccessorProcessor {
                 instantiatorHosts.add(dispatchTarget);
             }
 
+            // Register dispatch targets and track which lookup methods exist
+            boolean hasFieldReaders = false;
+            boolean hasMethodReaders = false;
+            boolean hasFieldWriters = false;
+            boolean hasMethodWriters = false;
+
             for (FactoryEntry fe : data.factoryReaderFields) {
                 factoryImpl.addReaderEntry(fe.declaringClass(), fe.type(), fe.name(),
                         readerClassIndex, fe.memberIndex());
+                if ("field".equals(fe.type())) {
+                    if (!hasFieldReaders) {
+                        hasFieldReaders = true;
+                        factoryImpl.registerDispatchTarget(fe.declaringClass(), dispatchTargetInternal, data.isInterface);
+                    }
+                } else {
+                    if (!hasMethodReaders) {
+                        hasMethodReaders = true;
+                        factoryImpl.registerDispatchTarget(fe.declaringClass(), dispatchTargetInternal, data.isInterface);
+                    }
+                }
             }
             for (FactoryEntry fe : data.factoryWriterFields) {
                 factoryImpl.addWriterEntry(fe.declaringClass(), fe.type(), fe.name(),
                         writerClassIndex, fe.memberIndex());
+                if ("field".equals(fe.type())) {
+                    if (!hasFieldWriters) {
+                        hasFieldWriters = true;
+                        factoryImpl.registerDispatchTarget(fe.declaringClass(), dispatchTargetInternal, data.isInterface);
+                    }
+                } else {
+                    if (!hasMethodWriters) {
+                        hasMethodWriters = true;
+                        factoryImpl.registerDispatchTarget(fe.declaringClass(), dispatchTargetInternal, data.isInterface);
+                    }
+                }
             }
             for (FactoryCtorEntry fe : data.factoryCtorEntries) {
                 factoryImpl.addInstantiatorEntry(fe.declaringClass(), fe.descriptor(),
                         instantiatorClassIndex, fe.ctorIndex());
+                factoryImpl.registerDispatchTarget(fe.declaringClass(), dispatchTargetInternal, data.isInterface);
+            }
+
+            if (hasFieldReaders) {
+                lookupMethods.add(FIELD_READER_LOOKUP);
+            }
+            if (hasMethodReaders) {
+                lookupMethods.add(METHOD_READER_LOOKUP);
+            }
+            if (hasFieldWriters) {
+                lookupMethods.add(FIELD_WRITER_LOOKUP);
+            }
+            if (hasMethodWriters) {
+                lookupMethods.add(METHOD_WRITER_LOOKUP);
+            }
+            if (!data.constructors.isEmpty()) {
+                lookupMethods.add(INSTANTIATOR_LOOKUP);
+            }
+
+            if (needsBridge) {
+                generatedClasses.produce(new GeneratedClassBuildItem(true,
+                        HibernateAccessorBridgeGenerator.bridgeFqcn(host),
+                        bridgeGen.generate(host,
+                                !data.readers.isEmpty(),
+                                !data.writers.isEmpty(),
+                                !data.constructors.isEmpty(),
+                                lookupMethods)));
             }
 
             transformer.produce(new BytecodeTransformerBuildItem.Builder()
@@ -249,8 +304,9 @@ class HibernateAccessorProcessor {
                     implGen.generateInstantiatorImpl(instantiatorHosts, interfaceHosts)));
         }
 
-        Gizmo classGizmo = Gizmo.create(new GeneratedClassGizmo2Adaptor(generatedClasses, null, true));
-        factoryImpl.create(classGizmo);
+        generatedClasses.produce(new GeneratedClassBuildItem(true,
+                HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY,
+                factoryImpl.generate()));
     }
 
     @BuildStep
