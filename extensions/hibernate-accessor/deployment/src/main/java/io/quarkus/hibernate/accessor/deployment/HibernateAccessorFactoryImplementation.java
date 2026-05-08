@@ -1,5 +1,6 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.STRING_SWITCH_CHUNK_SIZE;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.emitStringSwitch;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.pushIntConst;
@@ -7,6 +8,7 @@ import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerati
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,20 +22,13 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
 
     static final String QUARKUS_HIBERNATE_ACCESSOR_FACTORY = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory";
 
-    static final String FIELD_READER_LOOKUP = "$$__hibernateFieldReaderLookup";
-    static final String METHOD_READER_LOOKUP = "$$__hibernateMethodReaderLookup";
-    static final String FIELD_WRITER_LOOKUP = "$$__hibernateFieldWriterLookup";
-    static final String METHOD_WRITER_LOOKUP = "$$__hibernateMethodWriterLookup";
-    static final String INSTANTIATOR_LOOKUP = "$$__hibernateInstantiatorLookup";
+    static final String FIELD_READER = HibernateAccessorHostClassFunction.FIELD_READER;
+    static final String METHOD_READER = HibernateAccessorHostClassFunction.METHOD_READER;
+    static final String FIELD_WRITER = HibernateAccessorHostClassFunction.FIELD_WRITER;
+    static final String METHOD_WRITER = HibernateAccessorHostClassFunction.METHOD_WRITER;
+    static final String INSTANTIATOR_ACCESSOR = HibernateAccessorHostClassFunction.INSTANTIATOR_ACCESSOR;
 
     private static final String FACTORY_INTERNAL = fqcnToName(QUARKUS_HIBERNATE_ACCESSOR_FACTORY);
-
-    private static final String READER_IMPL_INTERNAL = fqcnToName(
-            HibernateAccessorSingleImplGenerator.READER_IMPL);
-    private static final String WRITER_IMPL_INTERNAL = fqcnToName(
-            HibernateAccessorSingleImplGenerator.WRITER_IMPL);
-    private static final String INSTANTIATOR_IMPL_INTERNAL = fqcnToName(
-            HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL);
 
     private static final String READER_INTERFACE = "org/hibernate/accessor/HibernateAccessorValueReader";
     private static final String WRITER_INTERFACE = "org/hibernate/accessor/HibernateAccessorValueWriter";
@@ -42,38 +37,14 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
 
     private static final String NAMING_UTIL = "io/quarkus/hibernate/accessor/runtime/spi/NamingUtil";
 
-    private static final String LOOKUP_DESCRIPTOR = "(Ljava/lang/String;)I";
-
-    private static final int INIT_BATCH_SIZE = 500;
-
-    private final List<ArrayEntry> fieldReaderEntries = new ArrayList<>();
-    private final List<ArrayEntry> methodReaderEntries = new ArrayList<>();
-    private final List<ArrayEntry> fieldWriterEntries = new ArrayList<>();
-    private final List<ArrayEntry> methodWriterEntries = new ArrayList<>();
-    private final List<ArrayEntry> instantiatorEntries = new ArrayList<>();
-
     private final Map<String, String> dispatchTargets = new LinkedHashMap<>();
     private final Set<String> interfaceTargets = new HashSet<>();
 
-    void addReaderEntry(String declaringClass, String type, String name, int classIndex, int memberIndex) {
-        if ("field".equals(type)) {
-            fieldReaderEntries.add(new ArrayEntry(declaringClass, name, classIndex, memberIndex));
-        } else {
-            methodReaderEntries.add(new ArrayEntry(declaringClass, name, classIndex, memberIndex));
-        }
-    }
-
-    void addWriterEntry(String declaringClass, String type, String name, int classIndex, int memberIndex) {
-        if ("field".equals(type)) {
-            fieldWriterEntries.add(new ArrayEntry(declaringClass, name, classIndex, memberIndex));
-        } else {
-            methodWriterEntries.add(new ArrayEntry(declaringClass, name, classIndex, memberIndex));
-        }
-    }
-
-    void addInstantiatorEntry(String declaringClass, String descriptor, int classIndex, int ctorIndex) {
-        instantiatorEntries.add(new ArrayEntry(declaringClass, descriptor, classIndex, ctorIndex));
-    }
+    private final Set<String> fieldReaderClasses = new LinkedHashSet<>();
+    private final Set<String> methodReaderClasses = new LinkedHashSet<>();
+    private final Set<String> fieldWriterClasses = new LinkedHashSet<>();
+    private final Set<String> methodWriterClasses = new LinkedHashSet<>();
+    private final Set<String> instantiatorClasses = new LinkedHashSet<>();
 
     void registerDispatchTarget(String declaringClassFqcn, String dispatchTargetInternal, boolean isInterface) {
         dispatchTargets.put(declaringClassFqcn, dispatchTargetInternal);
@@ -82,125 +53,46 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
         }
     }
 
+    void registerFieldReader(String declaringClassFqcn) {
+        fieldReaderClasses.add(declaringClassFqcn);
+    }
+
+    void registerMethodReader(String declaringClassFqcn) {
+        methodReaderClasses.add(declaringClassFqcn);
+    }
+
+    void registerFieldWriter(String declaringClassFqcn) {
+        fieldWriterClasses.add(declaringClassFqcn);
+    }
+
+    void registerMethodWriter(String declaringClassFqcn) {
+        methodWriterClasses.add(declaringClassFqcn);
+    }
+
+    void registerInstantiator(String declaringClassFqcn) {
+        instantiatorClasses.add(declaringClassFqcn);
+    }
+
     byte[] generate() {
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, FACTORY_INTERNAL, null,
                 "java/lang/Object", new String[] { FACTORY_INTERFACE });
 
-        generateArrayField(cw, "FIELD_READERS", READER_IMPL_INTERNAL);
-        generateArrayField(cw, "METHOD_READERS", READER_IMPL_INTERNAL);
-        generateArrayField(cw, "FIELD_WRITERS", WRITER_IMPL_INTERNAL);
-        generateArrayField(cw, "METHOD_WRITERS", WRITER_IMPL_INTERNAL);
-        generateArrayField(cw, "INSTANTIATORS", INSTANTIATOR_IMPL_INTERNAL);
-
-        generateClinit(cw);
         generateConstructor(cw);
 
-        generateValueReaderField(cw);
-        generateValueReaderMethod(cw);
-        generateValueWriterField(cw);
-        generateValueWriterMethod(cw);
-        generateInstantiator(cw);
-
-        generateLookupMethod(cw, "lookupFieldReader", fieldReaderEntries, FIELD_READER_LOOKUP);
-        generateLookupMethod(cw, "lookupMethodReader", methodReaderEntries, METHOD_READER_LOOKUP);
-        generateLookupMethod(cw, "lookupFieldWriter", fieldWriterEntries, FIELD_WRITER_LOOKUP);
-        generateLookupMethod(cw, "lookupMethodWriter", methodWriterEntries, METHOD_WRITER_LOOKUP);
-        generateLookupMethod(cw, "lookupInstantiator", instantiatorEntries, INSTANTIATOR_LOOKUP);
+        generateValueAccessor(cw, "valueReader", "java/lang/reflect/Field", "getName",
+                FIELD_READER, READER_INTERFACE, fieldReaderClasses);
+        generateValueAccessor(cw, "valueReader", "java/lang/reflect/Method", "getName",
+                METHOD_READER, READER_INTERFACE, methodReaderClasses);
+        generateValueAccessor(cw, "valueWriter", "java/lang/reflect/Field", "getName",
+                FIELD_WRITER, WRITER_INTERFACE, fieldWriterClasses);
+        generateValueAccessor(cw, "valueWriter", "java/lang/reflect/Method", "getName",
+                METHOD_WRITER, WRITER_INTERFACE, methodWriterClasses);
+        generateInstantiatorMethod(cw);
 
         cw.visitEnd();
         return cw.toByteArray();
-    }
-
-    private static void generateArrayField(ClassWriter cw, String name, String elementType) {
-        cw.visitField(ACC_PRIVATE | ACC_STATIC | ACC_FINAL, name,
-                "[L" + elementType + ";", null, null).visitEnd();
-    }
-
-    private void generateClinit(ClassWriter cw) {
-        MethodVisitor mv = cw.visitMethod(ACC_STATIC, "<clinit>", "()V", null, null);
-        mv.visitCode();
-
-        boolean hasReaders = !fieldReaderEntries.isEmpty() || !methodReaderEntries.isEmpty();
-        boolean hasWriters = !fieldWriterEntries.isEmpty() || !methodWriterEntries.isEmpty();
-        boolean hasInstantiators = !instantiatorEntries.isEmpty();
-
-        List<String> initMethods = new ArrayList<>();
-
-        if (hasReaders) {
-            emitArrayInit(mv, "FIELD_READERS", READER_IMPL_INTERNAL, fieldReaderEntries);
-            emitArrayInit(mv, "METHOD_READERS", READER_IMPL_INTERNAL, methodReaderEntries);
-            generateBatchedInitMethods(cw, "initFieldReaders", fieldReaderEntries, READER_IMPL_INTERNAL,
-                    "FIELD_READERS", initMethods);
-            generateBatchedInitMethods(cw, "initMethodReaders", methodReaderEntries, READER_IMPL_INTERNAL,
-                    "METHOD_READERS", initMethods);
-        }
-        if (hasWriters) {
-            emitArrayInit(mv, "FIELD_WRITERS", WRITER_IMPL_INTERNAL, fieldWriterEntries);
-            emitArrayInit(mv, "METHOD_WRITERS", WRITER_IMPL_INTERNAL, methodWriterEntries);
-            generateBatchedInitMethods(cw, "initFieldWriters", fieldWriterEntries, WRITER_IMPL_INTERNAL,
-                    "FIELD_WRITERS", initMethods);
-            generateBatchedInitMethods(cw, "initMethodWriters", methodWriterEntries, WRITER_IMPL_INTERNAL,
-                    "METHOD_WRITERS", initMethods);
-        }
-        if (hasInstantiators) {
-            emitArrayInit(mv, "INSTANTIATORS", INSTANTIATOR_IMPL_INTERNAL, instantiatorEntries);
-            generateBatchedInitMethods(cw, "initInstantiators", instantiatorEntries, INSTANTIATOR_IMPL_INTERNAL,
-                    "INSTANTIATORS", initMethods);
-        }
-
-        for (String methodName : initMethods) {
-            mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, methodName, "()V", false);
-        }
-
-        mv.visitInsn(RETURN);
-        mv.visitMaxs(0, 0);
-        mv.visitEnd();
-    }
-
-    private static void emitArrayInit(MethodVisitor mv, String fieldName, String elementType,
-            List<ArrayEntry> entries) {
-        pushIntConst(mv, entries.size());
-        mv.visitTypeInsn(ANEWARRAY, elementType);
-        mv.visitFieldInsn(PUTSTATIC, FACTORY_INTERNAL, fieldName, "[L" + elementType + ";");
-    }
-
-    private static void generateBatchedInitMethods(ClassWriter cw, String baseName,
-            List<ArrayEntry> entries, String implType, String arrayField, List<String> methodNames) {
-        if (entries.isEmpty()) {
-            return;
-        }
-        String arrayDesc = "[L" + implType + ";";
-
-        for (int batch = 0; batch * INIT_BATCH_SIZE < entries.size(); batch++) {
-            int start = batch * INIT_BATCH_SIZE;
-            int end = Math.min(start + INIT_BATCH_SIZE, entries.size());
-            String methodName = baseName + "$" + batch;
-            methodNames.add(methodName);
-
-            MethodVisitor mv = cw.visitMethod(ACC_PRIVATE | ACC_STATIC, methodName, "()V", null, null);
-            mv.visitCode();
-
-            mv.visitFieldInsn(GETSTATIC, FACTORY_INTERNAL, arrayField, arrayDesc);
-            mv.visitVarInsn(ASTORE, 0);
-
-            for (int i = start; i < end; i++) {
-                ArrayEntry entry = entries.get(i);
-                mv.visitVarInsn(ALOAD, 0);
-                pushIntConst(mv, i);
-                mv.visitTypeInsn(NEW, implType);
-                mv.visitInsn(DUP);
-                pushIntConst(mv, entry.classIndex());
-                pushIntConst(mv, entry.memberIndex());
-                mv.visitMethodInsn(INVOKESPECIAL, implType, "<init>", "(II)V", false);
-                mv.visitInsn(AASTORE);
-            }
-
-            mv.visitInsn(RETURN);
-            mv.visitMaxs(0, 0);
-            mv.visitEnd();
-        }
     }
 
     private static void generateConstructor(ClassWriter cw) {
@@ -213,129 +105,192 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
         mv.visitEnd();
     }
 
-    // valueReader(Field) -> lookupFieldReader(className, fieldName) -> FIELD_READERS[idx]
-    private static void generateValueReaderField(ClassWriter cw) {
-        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "valueReader",
-                "(Ljava/lang/reflect/Field;)L" + READER_INTERFACE + ";", null, null);
+    private void generateValueAccessor(ClassWriter cw, String factoryMethodName,
+            String reflectType, String memberNameMethod,
+            String hostMethodName, String returnInterface,
+            Set<String> classes) {
+        String returnDesc = "L" + returnInterface + ";";
+        String hostMethodDesc = "(Ljava/lang/String;)" + returnDesc;
+
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, factoryMethodName,
+                "(L" + reflectType + ";)L" + returnInterface + ";", null, null);
         mv.visitCode();
 
+        // slot 0 = this, slot 1 = field/method arg
+        // Extract className -> slot 2
         mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getDeclaringClass",
+        mv.visitMethodInsn(INVOKEVIRTUAL, reflectType, "getDeclaringClass",
                 "()Ljava/lang/Class;", false);
         mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
                 "()Ljava/lang/String;", false);
         mv.visitVarInsn(ASTORE, 2);
 
+        // Extract memberName -> slot 3
         mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getName",
+        mv.visitMethodInsn(INVOKEVIRTUAL, reflectType, memberNameMethod,
                 "()Ljava/lang/String;", false);
         mv.visitVarInsn(ASTORE, 3);
 
-        mv.visitVarInsn(ALOAD, 2);
-        mv.visitVarInsn(ALOAD, 3);
-        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupFieldReader",
-                "(Ljava/lang/String;Ljava/lang/String;)I", false);
-        mv.visitVarInsn(ISTORE, 4);
+        if (classes.isEmpty()) {
+            emitThrow(mv);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+            return;
+        }
 
-        emitArrayReturnOrThrow(mv, "FIELD_READERS", READER_IMPL_INTERNAL, 4);
+        List<String> classNames = new ArrayList<>(classes);
+        Label throwLabel = new Label();
+
+        if (classNames.size() <= STRING_SWITCH_CHUNK_SIZE) {
+            generateValueAccessorSwitch(mv, classNames, hostMethodName, hostMethodDesc,
+                    returnInterface, throwLabel);
+        } else {
+            generateValueAccessorChunked(cw, mv, factoryMethodName + "_" + hostMethodName,
+                    classNames, hostMethodName, hostMethodDesc, returnInterface, throwLabel);
+        }
+
+        // After switch — no class match or null result
+        mv.visitLabel(throwLabel);
+        mv.visitFrame(F_FULL, 4,
+                new Object[] { FACTORY_INTERNAL, reflectType, "java/lang/String",
+                        "java/lang/String" },
+                0, null);
+        emitThrow(mv);
 
         mv.visitMaxs(0, 0);
         mv.visitEnd();
     }
 
-    private static void generateValueReaderMethod(ClassWriter cw) {
-        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "valueReader",
-                "(Ljava/lang/reflect/Method;)L" + READER_INTERFACE + ";", null, null);
+    private void generateValueAccessorSwitch(MethodVisitor mv, List<String> classNames,
+            String hostMethodName, String hostMethodDesc,
+            String implInternal, Label throwLabel) {
+        Label defaultLabel = new Label();
+
+        emitStringSwitch(mv, 2, 4, classNames, defaultLabel, (caseMv, classIdx) -> {
+            String className = classNames.get(classIdx);
+            String target = dispatchTargets.get(className);
+            boolean isIface = interfaceTargets.contains(target);
+
+            caseMv.visitVarInsn(ALOAD, 3);
+            caseMv.visitMethodInsn(INVOKESTATIC, target, hostMethodName,
+                    hostMethodDesc, isIface);
+            caseMv.visitInsn(DUP);
+            Label notNull = new Label();
+            caseMv.visitJumpInsn(IFNONNULL, notNull);
+            caseMv.visitInsn(POP);
+            caseMv.visitJumpInsn(GOTO, throwLabel);
+            caseMv.visitLabel(notNull);
+            caseMv.visitInsn(ARETURN);
+        });
+
+        // Default of string switch — no class match
+        mv.visitLabel(defaultLabel);
+        mv.visitFrame(F_SAME, 0, null, 0, null);
+        mv.visitJumpInsn(GOTO, throwLabel);
+    }
+
+    private void generateValueAccessorChunked(ClassWriter cw, MethodVisitor mv,
+            String chunkBaseName,
+            List<String> classNames, String hostMethodName, String hostMethodDesc,
+            String implInternal, Label throwLabel) {
+        int numChunks = (classNames.size() + STRING_SWITCH_CHUNK_SIZE - 1) / STRING_SWITCH_CHUNK_SIZE;
+
+        List<List<String>> chunks = new ArrayList<>();
+        for (int i = 0; i < numChunks; i++) {
+            chunks.add(new ArrayList<>());
+        }
+        for (String className : classNames) {
+            int bucket = (className.hashCode() & 0x7FFFFFFF) % numChunks;
+            chunks.get(bucket).add(className);
+        }
+
+        String chunkMethodDesc = "(Ljava/lang/String;Ljava/lang/String;)" + "L" + implInternal + ";";
+
+        for (int i = 0; i < numChunks; i++) {
+            if (!chunks.get(i).isEmpty()) {
+                generateValueAccessorChunkMethod(cw, chunkBaseName + "$" + i,
+                        chunkMethodDesc, chunks.get(i), hostMethodName, hostMethodDesc, implInternal);
+            }
+        }
+
+        // Dispatcher in the main method
+        Label defaultLabel = new Label();
+        Label[] labels = new Label[numChunks];
+        for (int i = 0; i < numChunks; i++) {
+            labels[i] = chunks.get(i).isEmpty() ? defaultLabel : new Label();
+        }
+
+        mv.visitVarInsn(ALOAD, 2);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/String", "hashCode", "()I", false);
+        mv.visitLdcInsn(0x7FFFFFFF);
+        mv.visitInsn(IAND);
+        pushIntConst(mv, numChunks);
+        mv.visitInsn(IREM);
+        mv.visitTableSwitchInsn(0, numChunks - 1, defaultLabel, labels);
+
+        for (int i = 0; i < numChunks; i++) {
+            if (!chunks.get(i).isEmpty()) {
+                mv.visitLabel(labels[i]);
+                mv.visitFrame(F_SAME, 0, null, 0, null);
+                mv.visitVarInsn(ALOAD, 2);
+                mv.visitVarInsn(ALOAD, 3);
+                mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, chunkBaseName + "$" + i,
+                        chunkMethodDesc, false);
+                // Check for null result
+                mv.visitInsn(DUP);
+                Label notNull = new Label();
+                mv.visitJumpInsn(IFNONNULL, notNull);
+                mv.visitInsn(POP);
+                mv.visitJumpInsn(GOTO, throwLabel);
+                mv.visitLabel(notNull);
+                mv.visitInsn(ARETURN);
+            }
+        }
+
+        mv.visitLabel(defaultLabel);
+        mv.visitFrame(F_SAME, 0, null, 0, null);
+        mv.visitJumpInsn(GOTO, throwLabel);
+    }
+
+    private void generateValueAccessorChunkMethod(ClassWriter cw, String methodName,
+            String methodDesc, List<String> classNames,
+            String hostMethodName, String hostMethodDesc, String implInternal) {
+        MethodVisitor mv = cw.visitMethod(ACC_PRIVATE | ACC_STATIC, methodName,
+                methodDesc, null, null);
         mv.visitCode();
 
-        mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Method", "getDeclaringClass",
-                "()Ljava/lang/Class;", false);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
-                "()Ljava/lang/String;", false);
-        mv.visitVarInsn(ASTORE, 2);
+        Label defaultLabel = new Label();
 
-        mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Method", "getName",
-                "()Ljava/lang/String;", false);
-        mv.visitVarInsn(ASTORE, 3);
+        // slot 0 = className, slot 1 = memberName
+        emitStringSwitch(mv, 0, 2, classNames, defaultLabel, (caseMv, classIdx) -> {
+            String className = classNames.get(classIdx);
+            String target = dispatchTargets.get(className);
+            boolean isIface = interfaceTargets.contains(target);
 
-        mv.visitVarInsn(ALOAD, 2);
-        mv.visitVarInsn(ALOAD, 3);
-        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupMethodReader",
-                "(Ljava/lang/String;Ljava/lang/String;)I", false);
-        mv.visitVarInsn(ISTORE, 4);
+            caseMv.visitVarInsn(ALOAD, 1);
+            caseMv.visitMethodInsn(INVOKESTATIC, target, hostMethodName,
+                    hostMethodDesc, isIface);
+            caseMv.visitInsn(ARETURN);
+        });
 
-        emitArrayReturnOrThrow(mv, "METHOD_READERS", READER_IMPL_INTERNAL, 4);
-
-        mv.visitMaxs(0, 0);
-        mv.visitEnd();
-    }
-
-    private static void generateValueWriterField(ClassWriter cw) {
-        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "valueWriter",
-                "(Ljava/lang/reflect/Field;)L" + WRITER_INTERFACE + ";", null, null);
-        mv.visitCode();
-
-        mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getDeclaringClass",
-                "()Ljava/lang/Class;", false);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
-                "()Ljava/lang/String;", false);
-        mv.visitVarInsn(ASTORE, 2);
-
-        mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getName",
-                "()Ljava/lang/String;", false);
-        mv.visitVarInsn(ASTORE, 3);
-
-        mv.visitVarInsn(ALOAD, 2);
-        mv.visitVarInsn(ALOAD, 3);
-        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupFieldWriter",
-                "(Ljava/lang/String;Ljava/lang/String;)I", false);
-        mv.visitVarInsn(ISTORE, 4);
-
-        emitArrayReturnOrThrow(mv, "FIELD_WRITERS", WRITER_IMPL_INTERNAL, 4);
+        mv.visitLabel(defaultLabel);
+        mv.visitFrame(F_SAME, 0, null, 0, null);
+        mv.visitInsn(ACONST_NULL);
+        mv.visitInsn(ARETURN);
 
         mv.visitMaxs(0, 0);
         mv.visitEnd();
     }
 
-    private static void generateValueWriterMethod(ClassWriter cw) {
-        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "valueWriter",
-                "(Ljava/lang/reflect/Method;)L" + WRITER_INTERFACE + ";", null, null);
-        mv.visitCode();
+    private void generateInstantiatorMethod(ClassWriter cw) {
+        String hostMethodDesc = "(Ljava/lang/String;)L" + INSTANTIATOR_INTERFACE + ";";
 
-        mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Method", "getDeclaringClass",
-                "()Ljava/lang/Class;", false);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getName",
-                "()Ljava/lang/String;", false);
-        mv.visitVarInsn(ASTORE, 2);
-
-        mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Method", "getName",
-                "()Ljava/lang/String;", false);
-        mv.visitVarInsn(ASTORE, 3);
-
-        mv.visitVarInsn(ALOAD, 2);
-        mv.visitVarInsn(ALOAD, 3);
-        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupMethodWriter",
-                "(Ljava/lang/String;Ljava/lang/String;)I", false);
-        mv.visitVarInsn(ISTORE, 4);
-
-        emitArrayReturnOrThrow(mv, "METHOD_WRITERS", WRITER_IMPL_INTERNAL, 4);
-
-        mv.visitMaxs(0, 0);
-        mv.visitEnd();
-    }
-
-    private static void generateInstantiator(ClassWriter cw) {
         MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "instantiator",
                 "(Ljava/lang/reflect/Constructor;)L" + INSTANTIATOR_INTERFACE + ";",
                 null, null);
         mv.visitCode();
 
+        // Extract className -> slot 2
         mv.visitVarInsn(ALOAD, 1);
         mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Constructor", "getDeclaringClass",
                 "()Ljava/lang/Class;", false);
@@ -343,39 +298,64 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
                 "()Ljava/lang/String;", false);
         mv.visitVarInsn(ASTORE, 2);
 
+        // Extract constructor descriptor -> slot 3
         mv.visitVarInsn(ALOAD, 1);
         mv.visitMethodInsn(INVOKESTATIC, NAMING_UTIL, "constructorDescriptor",
                 "(Ljava/lang/reflect/Constructor;)Ljava/lang/String;", false);
         mv.visitVarInsn(ASTORE, 3);
 
-        mv.visitVarInsn(ALOAD, 2);
-        mv.visitVarInsn(ALOAD, 3);
-        mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, "lookupInstantiator",
-                "(Ljava/lang/String;Ljava/lang/String;)I", false);
-        mv.visitVarInsn(ISTORE, 4);
+        if (instantiatorClasses.isEmpty()) {
+            emitThrow(mv);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+            return;
+        }
 
-        emitArrayReturnOrThrow(mv, "INSTANTIATORS", INSTANTIATOR_IMPL_INTERNAL, 4);
+        List<String> classNames = new ArrayList<>(instantiatorClasses);
+        Label throwLabel = new Label();
+
+        if (classNames.size() <= STRING_SWITCH_CHUNK_SIZE) {
+            Label defaultLabel = new Label();
+
+            emitStringSwitch(mv, 2, 4, classNames, defaultLabel, (caseMv, classIdx) -> {
+                String className = classNames.get(classIdx);
+                String target = dispatchTargets.get(className);
+                boolean isIface = interfaceTargets.contains(target);
+
+                caseMv.visitVarInsn(ALOAD, 3);
+                caseMv.visitMethodInsn(INVOKESTATIC, target, INSTANTIATOR_ACCESSOR,
+                        hostMethodDesc, isIface);
+                caseMv.visitInsn(DUP);
+                Label notNull = new Label();
+                caseMv.visitJumpInsn(IFNONNULL, notNull);
+                caseMv.visitInsn(POP);
+                caseMv.visitJumpInsn(GOTO, throwLabel);
+                caseMv.visitLabel(notNull);
+                caseMv.visitInsn(ARETURN);
+            });
+
+            mv.visitLabel(defaultLabel);
+            mv.visitFrame(F_SAME, 0, null, 0, null);
+            mv.visitJumpInsn(GOTO, throwLabel);
+        } else {
+            // Chunked dispatch for instantiator (same pattern as value accessor)
+            generateValueAccessorChunked(cw, mv, "instantiator_" + INSTANTIATOR_ACCESSOR,
+                    classNames, INSTANTIATOR_ACCESSOR, hostMethodDesc,
+                    INSTANTIATOR_INTERFACE, throwLabel);
+        }
+
+        mv.visitLabel(throwLabel);
+        mv.visitFrame(F_FULL, 4,
+                new Object[] { FACTORY_INTERNAL, "java/lang/reflect/Constructor", "java/lang/String",
+                        "java/lang/String" },
+                0, null);
+        emitThrow(mv);
 
         mv.visitMaxs(0, 0);
         mv.visitEnd();
     }
 
-    private static void emitArrayReturnOrThrow(MethodVisitor mv, String arrayField,
-            String elementType, int idxLocal) {
-        Label throwLabel = new Label();
-        mv.visitVarInsn(ILOAD, idxLocal);
-        mv.visitJumpInsn(IFLT, throwLabel);
-
-        mv.visitFieldInsn(GETSTATIC, FACTORY_INTERNAL, arrayField, "[L" + elementType + ";");
-        mv.visitVarInsn(ILOAD, idxLocal);
-        mv.visitInsn(AALOAD);
-        mv.visitInsn(ARETURN);
-
-        mv.visitLabel(throwLabel);
-        mv.visitFrame(F_FULL, 5,
-                new Object[] { FACTORY_INTERNAL, "java/lang/Object", "java/lang/String",
-                        "java/lang/String", INTEGER },
-                0, null);
+    private static void emitThrow(MethodVisitor mv) {
         mv.visitTypeInsn(NEW, "java/lang/UnsupportedOperationException");
         mv.visitInsn(DUP);
         mv.visitVarInsn(ALOAD, 2);
@@ -388,76 +368,5 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
         mv.visitMethodInsn(INVOKESPECIAL, "java/lang/UnsupportedOperationException",
                 "<init>", "(Ljava/lang/String;)V", false);
         mv.visitInsn(ATHROW);
-    }
-
-    // Generates: static int lookupXxx(String className, String memberName) { ... }
-    // Outer switch on className delegates to host class lookup, adds base offset.
-    // Locals: slot 0 = className, slot 1 = memberName, slot 2 = outer temp, slot 3 = localIdx
-    private void generateLookupMethod(ClassWriter cw, String methodName,
-            List<ArrayEntry> entries, String hostLookupMethodName) {
-        MethodVisitor mv = cw.visitMethod(ACC_PRIVATE | ACC_STATIC, methodName,
-                "(Ljava/lang/String;Ljava/lang/String;)I", null, null);
-        mv.visitCode();
-
-        if (entries.isEmpty()) {
-            pushIntConst(mv, -1);
-            mv.visitInsn(IRETURN);
-            mv.visitMaxs(0, 0);
-            mv.visitEnd();
-            return;
-        }
-
-        // Compute unique classes and their base offsets from the entries list
-        Map<String, Integer> classBaseOffsets = new LinkedHashMap<>();
-        for (int i = 0; i < entries.size(); i++) {
-            classBaseOffsets.putIfAbsent(entries.get(i).declaringClass(), i);
-        }
-
-        List<String> classNames = classBaseOffsets.keySet().stream().toList();
-        Label defaultLabel = new Label();
-
-        // Single-level string switch on className (slot 0, temp in slot 2)
-        emitStringSwitch(mv, 0, 2, classNames, defaultLabel, (caseMv, classIdx) -> {
-            String className = classNames.get(classIdx);
-            String target = dispatchTargets.get(className);
-            int baseOffset = classBaseOffsets.get(className);
-
-            // int localIdx = DispatchTarget.hostLookupMethod(memberName);
-            caseMv.visitVarInsn(ALOAD, 1);
-            caseMv.visitMethodInsn(INVOKESTATIC, target, hostLookupMethodName,
-                    LOOKUP_DESCRIPTOR, interfaceTargets.contains(target));
-            caseMv.visitVarInsn(ISTORE, 3);
-
-            // if (localIdx < 0) goto default
-            caseMv.visitVarInsn(ILOAD, 3);
-            Label notFound = new Label();
-            caseMv.visitJumpInsn(IFLT, notFound);
-
-            // return baseOffset + localIdx
-            if (baseOffset == 0) {
-                caseMv.visitVarInsn(ILOAD, 3);
-            } else {
-                pushIntConst(caseMv, baseOffset);
-                caseMv.visitVarInsn(ILOAD, 3);
-                caseMv.visitInsn(IADD);
-            }
-            caseMv.visitInsn(IRETURN);
-
-            caseMv.visitLabel(notFound);
-            caseMv.visitFrame(F_SAME, 0, null, 0, null);
-            caseMv.visitJumpInsn(GOTO, defaultLabel);
-        });
-
-        // default: return -1
-        mv.visitLabel(defaultLabel);
-        mv.visitFrame(F_SAME, 0, null, 0, null);
-        pushIntConst(mv, -1);
-        mv.visitInsn(IRETURN);
-
-        mv.visitMaxs(0, 0);
-        mv.visitEnd();
-    }
-
-    record ArrayEntry(String declaringClass, String memberName, int classIndex, int memberIndex) {
     }
 }

@@ -138,6 +138,10 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
             List<String> hostClasses, Set<String> interfaceHosts,
             String staticMethodName, String staticMethodDesc, int targetArgSlot) {
         int count = hostClasses.size();
+        if (count == 0) {
+            throwIllegalArgumentWithClassIndex(mv, className);
+            return;
+        }
         Label[] labels = new Label[count];
         for (int i = 0; i < count; i++) {
             labels[i] = new Label();
@@ -171,6 +175,10 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
     private static void generateWriteDispatchSwitch(MethodVisitor mv, String className,
             List<String> hostClasses, Set<String> interfaceHosts) {
         int count = hostClasses.size();
+        if (count == 0) {
+            throwIllegalArgumentWithClassIndex(mv, className);
+            return;
+        }
         Label[] labels = new Label[count];
         for (int i = 0; i < count; i++) {
             labels[i] = new Label();

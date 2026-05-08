@@ -20,7 +20,7 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
     }
 
     byte[] generate(String hostFqcn, boolean hasReaders, boolean hasWriters, boolean hasConstructors,
-            List<String> lookupMethods) {
+            List<MethodForward> accessorMethods) {
         String bridgeName = fqcnToName(bridgeFqcn(hostFqcn));
         String hostName = fqcnToName(hostFqcn);
 
@@ -41,8 +41,8 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
                     "(I[Ljava/lang/Object;)Ljava/lang/Object;", hostName, false);
         }
 
-        for (String lookupMethod : lookupMethods) {
-            generateForward(cw, lookupMethod, "(Ljava/lang/String;)I", hostName, false);
+        for (MethodForward forward : accessorMethods) {
+            generateForward(cw, forward.name(), forward.descriptor(), hostName, false);
         }
 
         cw.visitEnd();
@@ -68,5 +68,8 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
 
         mv.visitMaxs(argTypes.length, argTypes.length);
         mv.visitEnd();
+    }
+
+    record MethodForward(String name, String descriptor) {
     }
 }
