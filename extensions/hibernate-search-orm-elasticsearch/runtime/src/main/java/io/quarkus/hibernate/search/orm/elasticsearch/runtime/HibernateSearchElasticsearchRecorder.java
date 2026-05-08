@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
+import org.hibernate.accessor.HibernateAccessorFactory;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.registry.StandardServiceInitiator;
 import org.hibernate.boot.spi.BootstrapContext;
@@ -33,7 +34,6 @@ import org.hibernate.search.mapper.orm.mapping.HibernateOrmSearchMappingConfigur
 import org.hibernate.search.mapper.orm.mapping.SearchMapping;
 import org.hibernate.search.mapper.orm.session.SearchSession;
 import org.hibernate.search.mapper.pojo.work.IndexingPlanSynchronizationStrategy;
-import org.hibernate.search.util.common.reflect.spi.ValueHandleFactory;
 
 import io.quarkus.arc.ActiveResult;
 import io.quarkus.arc.Arc;
@@ -65,7 +65,8 @@ public class HibernateSearchElasticsearchRecorder {
     public HibernateOrmIntegrationStaticInitListener createStaticInitListener(
             HibernateSearchOrmElasticsearchMapperContext mapperContext,
             Set<String> rootAnnotationMappedClassNames,
-            List<HibernateOrmIntegrationStaticInitListener> integrationStaticInitListeners) {
+            List<HibernateOrmIntegrationStaticInitListener> integrationStaticInitListeners,
+            RuntimeValue<HibernateAccessorFactory> accessorFactory) {
         Set<Class<?>> rootAnnotationMappedClasses = new LinkedHashSet<>();
         ClassLoader tccl = Thread.currentThread().getContextClassLoader();
         for (String className : rootAnnotationMappedClassNames) {
@@ -78,7 +79,8 @@ public class HibernateSearchElasticsearchRecorder {
         return new HibernateSearchIntegrationStaticInitListener(mapperContext,
                 buildTimeConfig.persistenceUnits().get(mapperContext.persistenceUnitName),
                 rootAnnotationMappedClasses,
-                integrationStaticInitListeners);
+                integrationStaticInitListeners,
+                accessorFactory);
     }
 
     public HibernateOrmIntegrationStaticInitListener createStaticInitInactiveListener() {
@@ -197,16 +199,19 @@ public class HibernateSearchElasticsearchRecorder {
         private final HibernateSearchElasticsearchBuildTimeConfigPersistenceUnit buildTimeConfig;
         private final Set<Class<?>> rootAnnotationMappedClasses;
         private final List<HibernateOrmIntegrationStaticInitListener> integrationStaticInitListeners;
+        private final RuntimeValue<HibernateAccessorFactory> accessorFactory;
 
         private HibernateSearchIntegrationStaticInitListener(HibernateSearchOrmElasticsearchMapperContext mapperContext,
                 HibernateSearchElasticsearchBuildTimeConfigPersistenceUnit buildTimeConfig,
                 Set<Class<?>> rootAnnotationMappedClasses,
-                List<HibernateOrmIntegrationStaticInitListener> integrationStaticInitListeners) {
+                List<HibernateOrmIntegrationStaticInitListener> integrationStaticInitListeners,
+                RuntimeValue<HibernateAccessorFactory> accessorFactory) {
             this.mapperContext = mapperContext;
             this.persistenceUnitName = mapperContext.persistenceUnitName;
             this.buildTimeConfig = buildTimeConfig;
             this.rootAnnotationMappedClasses = rootAnnotationMappedClasses;
             this.integrationStaticInitListeners = integrationStaticInitListeners;
+            this.accessorFactory = accessorFactory;
         }
 
         @Override
@@ -258,8 +263,7 @@ public class HibernateSearchElasticsearchRecorder {
         public void onMetadataInitialized(Metadata metadata, BootstrapContext bootstrapContext,
                 BiConsumer<String, Object> propertyCollector) {
             HibernateOrmIntegrationBooter booter = HibernateOrmIntegrationBooter.builder(metadata, bootstrapContext)
-                    // MethodHandles don't work at all in GraalVM 20 and below, and seem unreliable on GraalVM 21
-                    .valueReadHandleFactory(ValueHandleFactory.usingJavaLangReflect())
+                    .valueReadHandleFactory(accessorFactory.getValue())
                     .build();
             booter.preBoot(propertyCollector);
 
