@@ -8,6 +8,10 @@ import io.quarkus.runtime.annotations.Recorder;
 @Recorder
 public class HibernateAccessorRecorder {
 
+    public void initAccessorImplFactory(String readerClass, String writerClass, String instantiatorClass) {
+        AccessorImplFactory.init(readerClass, writerClass, instantiatorClass);
+    }
+
     public RuntimeValue<HibernateAccessorFactory> createAccessorFactory(String generatedFactoryClassName) {
         try {
             Class<?> factoryClass = Class.forName(generatedFactoryClassName, true,

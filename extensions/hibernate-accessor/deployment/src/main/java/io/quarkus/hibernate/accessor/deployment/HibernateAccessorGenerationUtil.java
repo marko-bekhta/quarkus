@@ -11,6 +11,7 @@ import org.objectweb.asm.Opcodes;
 final class HibernateAccessorGenerationUtil implements Opcodes {
 
     static final int SWITCH_CHUNK_SIZE = 1000;
+    static final int STRING_SWITCH_CHUNK_SIZE = 500;
 
     private HibernateAccessorGenerationUtil() {
     }
