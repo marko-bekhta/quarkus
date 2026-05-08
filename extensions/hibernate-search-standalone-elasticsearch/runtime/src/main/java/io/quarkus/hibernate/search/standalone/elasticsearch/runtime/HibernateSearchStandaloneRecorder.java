@@ -16,6 +16,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import org.hibernate.accessor.HibernateAccessorFactory;
 import org.hibernate.search.engine.cfg.EngineSettings;
 import org.hibernate.search.engine.environment.bean.BeanReference;
 import org.hibernate.search.engine.reporting.FailureHandler;
@@ -25,7 +26,6 @@ import org.hibernate.search.mapper.pojo.standalone.cfg.spi.StandalonePojoMapperS
 import org.hibernate.search.mapper.pojo.standalone.mapping.SearchMapping;
 import org.hibernate.search.mapper.pojo.standalone.mapping.StandalonePojoMappingConfigurer;
 import org.hibernate.search.mapper.pojo.work.IndexingPlanSynchronizationStrategy;
-import org.hibernate.search.util.common.reflect.spi.ValueHandleFactory;
 
 import io.quarkus.arc.ActiveResult;
 import io.quarkus.arc.Arc;
@@ -54,7 +54,8 @@ public class HibernateSearchStandaloneRecorder {
     }
 
     public void preBoot(HibernateSearchStandaloneElasticsearchMapperContext mapperContext,
-            Set<String> rootAnnotationMappedClassNames) {
+            Set<String> rootAnnotationMappedClassNames,
+            RuntimeValue<HibernateAccessorFactory> accessorFactory) {
         Set<Class<?>> rootAnnotationMappedClasses = new LinkedHashSet<>();
         ClassLoader tccl = Thread.currentThread().getContextClassLoader();
         for (String className : rootAnnotationMappedClassNames) {
@@ -69,9 +70,7 @@ public class HibernateSearchStandaloneRecorder {
                 .contributeBootProperties(bootProperties::put);
         StandalonePojoIntegrationBooter booter = StandalonePojoIntegrationBooter.builder()
                 .properties(bootProperties)
-                // MethodHandles don't work at all in GraalVM 20 and below, and seem unreliable on GraalVM 21
-                .valueReadHandleFactory(ValueHandleFactory.usingJavaLangReflect())
-                // Integrate CDI
+                .valueReadHandleFactory(accessorFactory.getValue())
                 .property(StandalonePojoMapperSpiSettings.BEAN_PROVIDER, new ArcBeanProvider(Arc.container()))
                 .build();
         booter.preBoot(bootProperties::put);
