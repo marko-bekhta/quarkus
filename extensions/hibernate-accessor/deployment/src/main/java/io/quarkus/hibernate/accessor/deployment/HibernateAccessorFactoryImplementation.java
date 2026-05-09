@@ -73,39 +73,57 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
         instantiatorClasses.add(declaringClassFqcn);
     }
 
-    byte[] generate() {
+    byte[] generate(boolean withFallback) {
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, FACTORY_INTERNAL, null,
                 "java/lang/Object", new String[] { FACTORY_INTERFACE });
 
-        generateConstructor(cw);
+        if (withFallback) {
+            cw.visitField(ACC_PRIVATE | ACC_FINAL, "fallback", "L" + FACTORY_INTERFACE + ";", null, null).visitEnd();
+        }
 
-        generateValueAccessor(cw, "valueReader", "java/lang/reflect/Field", "getName",
+        generateConstructor(cw, withFallback);
+
+        generateValueAccessor(cw, withFallback, "valueReader", "java/lang/reflect/Field", "getName",
                 FIELD_READER, READER_INTERFACE, fieldReaderClasses);
-        generateValueAccessor(cw, "valueReader", "java/lang/reflect/Method", "getName",
+        generateValueAccessor(cw, withFallback, "valueReader", "java/lang/reflect/Method", "getName",
                 METHOD_READER, READER_INTERFACE, methodReaderClasses);
-        generateValueAccessor(cw, "valueWriter", "java/lang/reflect/Field", "getName",
+        generateValueAccessor(cw, withFallback, "valueWriter", "java/lang/reflect/Field", "getName",
                 FIELD_WRITER, WRITER_INTERFACE, fieldWriterClasses);
-        generateValueAccessor(cw, "valueWriter", "java/lang/reflect/Method", "getName",
+        generateValueAccessor(cw, withFallback, "valueWriter", "java/lang/reflect/Method", "getName",
                 METHOD_WRITER, WRITER_INTERFACE, methodWriterClasses);
-        generateInstantiatorMethod(cw);
+        generateInstantiatorMethod(cw, withFallback);
 
         cw.visitEnd();
         return cw.toByteArray();
     }
 
-    private static void generateConstructor(ClassWriter cw) {
-        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
-        mv.visitCode();
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
-        mv.visitInsn(RETURN);
-        mv.visitMaxs(0, 0);
-        mv.visitEnd();
+    private void generateConstructor(ClassWriter cw, boolean withFallback) {
+        if (withFallback) {
+            String desc = "(L" + FACTORY_INTERFACE + ";)V";
+            MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", desc, null, null);
+            mv.visitCode();
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitVarInsn(ALOAD, 1);
+            mv.visitFieldInsn(PUTFIELD, FACTORY_INTERNAL, "fallback", "L" + FACTORY_INTERFACE + ";");
+            mv.visitInsn(RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        } else {
+            MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
+            mv.visitCode();
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+            mv.visitInsn(RETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+        }
     }
 
-    private void generateValueAccessor(ClassWriter cw, String factoryMethodName,
+    private void generateValueAccessor(ClassWriter cw, boolean withFallback, String factoryMethodName,
             String reflectType, String memberNameMethod,
             String hostMethodName, String returnInterface,
             Set<String> classes) {
@@ -132,7 +150,7 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
         mv.visitVarInsn(ASTORE, 3);
 
         if (classes.isEmpty()) {
-            emitThrow(mv);
+            emitThrowOrFallback(mv, withFallback, factoryMethodName, reflectType, returnInterface);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
             return;
@@ -155,7 +173,7 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
                 new Object[] { FACTORY_INTERNAL, reflectType, "java/lang/String",
                         "java/lang/String" },
                 0, null);
-        emitThrow(mv);
+        emitThrowOrFallback(mv, withFallback, factoryMethodName, reflectType, returnInterface);
 
         mv.visitMaxs(0, 0);
         mv.visitEnd();
@@ -282,7 +300,7 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
         mv.visitEnd();
     }
 
-    private void generateInstantiatorMethod(ClassWriter cw) {
+    private void generateInstantiatorMethod(ClassWriter cw, boolean withFallback) {
         String hostMethodDesc = "(Ljava/lang/String;)L" + INSTANTIATOR_INTERFACE + ";";
 
         MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "instantiator",
@@ -305,7 +323,7 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
         mv.visitVarInsn(ASTORE, 3);
 
         if (instantiatorClasses.isEmpty()) {
-            emitThrow(mv);
+            emitThrowOrFallback(mv, withFallback, "instantiator", "java/lang/reflect/Constructor", INSTANTIATOR_INTERFACE);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
             return;
@@ -349,10 +367,24 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
                 new Object[] { FACTORY_INTERNAL, "java/lang/reflect/Constructor", "java/lang/String",
                         "java/lang/String" },
                 0, null);
-        emitThrow(mv);
+        emitThrowOrFallback(mv, withFallback, "instantiator", "java/lang/reflect/Constructor", INSTANTIATOR_INTERFACE);
 
         mv.visitMaxs(0, 0);
         mv.visitEnd();
+    }
+
+    private void emitThrowOrFallback(MethodVisitor mv, boolean withFallback, String factoryMethodName,
+            String reflectType, String returnInterface) {
+        if (withFallback) {
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitFieldInsn(GETFIELD, FACTORY_INTERNAL, "fallback", "L" + FACTORY_INTERFACE + ";");
+            mv.visitVarInsn(ALOAD, 1);
+            mv.visitMethodInsn(INVOKEINTERFACE, FACTORY_INTERFACE, factoryMethodName,
+                    "(L" + reflectType + ";)L" + returnInterface + ";", true);
+            mv.visitInsn(ARETURN);
+        } else {
+            emitThrow(mv);
+        }
     }
 
     private static void emitThrow(MethodVisitor mv) {

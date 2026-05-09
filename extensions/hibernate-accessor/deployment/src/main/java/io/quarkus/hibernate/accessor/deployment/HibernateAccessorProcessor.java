@@ -26,12 +26,16 @@ import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedClassBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.ReflectiveFieldBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.ReflectiveMethodBuildItem;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBridgeGenerator.MethodForward;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.Builder;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
-import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MemberMetadata;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
+import io.quarkus.hibernate.accessor.runtime.HibernateAccessorBuildTimeConfig;
 import io.quarkus.hibernate.accessor.runtime.HibernateAccessorRecorder;
+import io.quarkus.hibernate.accessor.runtime.HibernateAccessorStrategy;
 import io.quarkus.hibernate.accessor.runtime.ReflectionFreeAccessor;
 
 class HibernateAccessorProcessor {
@@ -92,9 +96,13 @@ class HibernateAccessorProcessor {
 
     @BuildStep
     void generateDirectAccessors(
+            HibernateAccessorBuildTimeConfig config,
             List<HibernateAccessorBuildItem> hibernateAccessorBuildItemList,
             BuildProducer<GeneratedClassBuildItem> generatedClasses,
             BuildProducer<BytecodeTransformerBuildItem> transformer) {
+        if (config.strategy() == HibernateAccessorStrategy.REFLECTION) {
+            return;
+        }
 
         List<HostData> hosts = new ArrayList<>();
         HostData currentType = null;
@@ -210,28 +218,73 @@ class HibernateAccessorProcessor {
                 HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL,
                 implGen.generateInstantiatorImpl(hosts)));
 
+        boolean withFallback = config.strategy() == HibernateAccessorStrategy.REFLECTION_FREE_WITH_FALLBACK;
         generatedClasses.produce(new GeneratedClassBuildItem(true,
                 HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY,
-                factoryImpl.generate()));
+                factoryImpl.generate(withFallback)));
     }
 
     @BuildStep
     void registerForReflection(
-            BuildProducer<ReflectiveClassBuildItem> reflectiveClass) {
-        reflectiveClass.produce(ReflectiveClassBuildItem
-                .builder(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY).constructors().build());
+            HibernateAccessorBuildTimeConfig config,
+            List<HibernateAccessorBuildItem> accessorBuildItems,
+            BuildProducer<ReflectiveFieldBuildItem> reflectiveFields,
+            BuildProducer<ReflectiveMethodBuildItem> reflectiveMethods,
+            BuildProducer<ReflectiveClassBuildItem> reflectiveClasses) {
+        if (config.strategy() == HibernateAccessorStrategy.REFLECTION_FREE) {
+            reflectiveClasses.produce(ReflectiveClassBuildItem
+                    .builder(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY).constructors().build());
+        } else {
+            String reason = getClass().getName();
+            for (HibernateAccessorBuildItem item : accessorBuildItems) {
+                for (FieldMetadata field : item.getFields()) {
+                    reflectiveFields.produce(new ReflectiveFieldBuildItem(reason, field.declaringClass(), field.name()));
+                }
+                for (MethodMetadata getter : item.getGetters()) {
+                    reflectiveMethods.produce(
+                            new ReflectiveMethodBuildItem(reason, getter.declaringClass(), getter.name(), new String[0]));
+                }
+                for (MethodMetadata setter : item.getSetters()) {
+                    reflectiveMethods.produce(
+                            new ReflectiveMethodBuildItem(reason, setter.declaringClass(), setter.name(),
+                                    setter.parameterTypes()));
+                }
+                for (ConstructorMetadata ctor : item.getConstructors()) {
+                    reflectiveClasses.produce(
+                            ReflectiveClassBuildItem.builder(ctor.declaringClass()).constructors().build());
+                }
+            }
+        }
     }
 
     @BuildStep
     @Record(ExecutionTime.STATIC_INIT)
     HibernateAccessorFactoryBuildItem accessFActory(
+            HibernateAccessorBuildTimeConfig config,
             HibernateAccessorRecorder recorder) {
-        recorder.initAccessorImplFactory(
-                HibernateAccessorSingleImplGenerator.READER_IMPL,
-                HibernateAccessorSingleImplGenerator.WRITER_IMPL,
-                HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL);
-        return new HibernateAccessorFactoryBuildItem(
-                recorder.createAccessorFactory(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY));
+        switch (config.strategy()) {
+            case REFLECTION -> {
+                return new HibernateAccessorFactoryBuildItem(recorder.createReflectionFactory());
+            }
+            case REFLECTION_FREE_WITH_FALLBACK -> {
+                recorder.initAccessorImplFactory(
+                        HibernateAccessorSingleImplGenerator.READER_IMPL,
+                        HibernateAccessorSingleImplGenerator.WRITER_IMPL,
+                        HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL);
+                return new HibernateAccessorFactoryBuildItem(
+                        recorder.createAccessorFactoryWithFallback(
+                                HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY));
+            }
+            default -> {
+                recorder.initAccessorImplFactory(
+                        HibernateAccessorSingleImplGenerator.READER_IMPL,
+                        HibernateAccessorSingleImplGenerator.WRITER_IMPL,
+                        HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL);
+                return new HibernateAccessorFactoryBuildItem(
+                        recorder.createAccessorFactory(
+                                HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY));
+            }
+        }
     }
 
     record HostData(TypeMetadata type,
