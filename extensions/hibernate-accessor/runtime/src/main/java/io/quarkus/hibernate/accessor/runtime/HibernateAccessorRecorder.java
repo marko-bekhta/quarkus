@@ -25,4 +25,22 @@ public class HibernateAccessorRecorder {
         }
     }
 
+    public RuntimeValue<HibernateAccessorFactory> createAccessorFactoryWithFallback(String generatedFactoryClassName) {
+        try {
+            Class<?> factoryClass = Class.forName(generatedFactoryClassName, true,
+                    Thread.currentThread().getContextClassLoader());
+            HibernateAccessorFactory factory = (HibernateAccessorFactory) factoryClass
+                    .getDeclaredConstructor(HibernateAccessorFactory.class)
+                    .newInstance(HibernateAccessorFactory.reflection());
+            return new RuntimeValue<>(factory);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to instantiate generated accessor factory with fallback: "
+                    + generatedFactoryClassName, e);
+        }
+    }
+
+    public RuntimeValue<HibernateAccessorFactory> createReflectionFactory() {
+        return new RuntimeValue<>(HibernateAccessorFactory.reflection());
+    }
+
 }

@@ -223,6 +223,14 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
     public record MethodMetadata(String name, String descriptor, boolean isPrimitive,
             String declaringClass, boolean isInterface,
             String returnDescriptor) implements MemberMetadata {
+        public String[] parameterTypes() {
+            org.objectweb.asm.Type[] argTypes = org.objectweb.asm.Type.getArgumentTypes(descriptor);
+            String[] paramClassNames = new String[argTypes.length];
+            for (int i = 0; i < argTypes.length; i++) {
+                paramClassNames[i] = argTypes[i].getClassName();
+            }
+            return paramClassNames;
+        }
     }
 
     public record ConstructorMetadata(String declaringClass, String host, String descriptor,
