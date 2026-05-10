@@ -20,6 +20,10 @@ final class HibernateAccessorGenerationUtil implements Opcodes {
         return fqcn.replace('.', '/');
     }
 
+    static String nameToFqcn(String fqcn) {
+        return fqcn.replace('/', '.');
+    }
+
     static void pushIntConst(MethodVisitor mv, int value) {
         if (value >= -1 && value <= 5) {
             mv.visitInsn(ICONST_0 + value);

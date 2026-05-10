@@ -4,13 +4,17 @@ import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerati
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.SWITCH_CHUNK_SIZE;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.emitStringSwitch;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.nameToFqcn;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.pushIntConst;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiFunction;
 
 import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -18,22 +22,25 @@ import org.objectweb.asm.Type;
 
 import io.quarkus.deployment.util.AsmUtil;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MemberMetadata;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ParameterMetadata;
 
 class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisitor, ClassVisitor>, Opcodes {
 
-    static final String READ_METHOD = "$$__hibernateRead";
-    static final String WRITE_METHOD = "$$__hibernateWrite";
-    static final String CREATE_METHOD = "$$__hibernateCreate";
+    static final int ACCESSOR_TRANSFORMATION_PRIORITY = -2;
+    static final String READ_METHOD = "$$__hibernateAccessor_read";
+    static final String WRITE_METHOD = "$$__hibernateAccessor_write";
+    static final String CREATE_METHOD = "$$__hibernateAccessor_create";
 
-    static final String FIELD_READER = "$$__hibernateFieldReader";
-    static final String METHOD_READER = "$$__hibernateMethodReader";
-    static final String FIELD_WRITER = "$$__hibernateFieldWriter";
-    static final String METHOD_WRITER = "$$__hibernateMethodWriter";
-    static final String INSTANTIATOR_ACCESSOR = "$$__hibernateInstantiator";
+    static final String FIELD_READER = "$$__hibernateAccessor_fieldReader";
+    static final String METHOD_READER = "$$__hibernateAccessor_methodReader";
+    static final String FIELD_WRITER = "$$__hibernateAccessor_fieldWriter";
+    static final String METHOD_WRITER = "$$__hibernateAccessor_methodWriter";
+    static final String INSTANTIATOR_ACCESSOR = "$$__hibernateAccessor_instantiator";
 
     // Matches org.hibernate.bytecode.enhance.spi.EnhancerConstants.PERSISTENT_FIELD_READER_PREFIX;
-    // duplicated here because this module does not depend on hibernate-core.
     private static final String PERSISTENT_FIELD_READER_PREFIX = "$$_hibernate_read_";
 
     private static final String READER_INTERFACE_INTERNAL = "org/hibernate/accessor/HibernateAccessorValueReader";
@@ -42,13 +49,13 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
     private static final String ACCESSOR_IMPL_FACTORY_INTERNAL = "io/quarkus/hibernate/accessor/runtime/AccessorImplFactory";
 
-    private final List<ReadMember> readers;
-    private final List<WriteMember> writers;
-    private final List<ConstructorMetadata> constructors;
+    private final Set<MemberMetadata> readers;
+    private final Set<MemberMetadata> writers;
+    private final Set<ConstructorMetadata> constructors;
     private final int classIndex;
 
-    HibernateAccessorHostClassFunction(List<ReadMember> readers, List<WriteMember> writers,
-            List<ConstructorMetadata> constructors, int classIndex) {
+    HibernateAccessorHostClassFunction(Set<MemberMetadata> readers, Set<MemberMetadata> writers,
+            Set<ConstructorMetadata> constructors, int classIndex) {
         this.readers = readers;
         this.writers = writers;
         this.constructors = constructors;
@@ -61,16 +68,15 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
     }
 
     private static class HostClassVisitor extends ClassVisitor {
-        private final List<ReadMember> readers;
-        private final List<WriteMember> writers;
-        private final List<ConstructorMetadata> constructors;
-        private final List<ReadGetter> discoveredReaders = new ArrayList<>();
+        private final Set<MemberMetadata> readers;
+        private final Set<MemberMetadata> writers;
+        private final Set<ConstructorMetadata> constructors;
         private final int classIndex;
         private boolean isInterface;
         private String className;
 
-        HostClassVisitor(ClassVisitor visitor, List<ReadMember> readers, List<WriteMember> writers,
-                List<ConstructorMetadata> constructors, int classIndex) {
+        HostClassVisitor(ClassVisitor visitor, Set<MemberMetadata> readers, Set<MemberMetadata> writers,
+                Set<ConstructorMetadata> constructors, int classIndex) {
             super(AsmUtil.ASM_API_VERSION, visitor);
             this.readers = readers;
             this.writers = writers;
@@ -86,39 +92,37 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
         }
 
         @Override
-        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
-                String[] exceptions) {
+        public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+            // Final fields won't be having a setter, so we want to remove them.
+            // we do collect them at build time since some extension can provide transformations that would remove the final ...
+            if ((access & ACC_FINAL) != 0) {
+                writers.removeIf(member -> member.name().equals(name) && member instanceof FieldMetadata);
+            }
+            return super.visitField(access, name, descriptor, signature, value);
+        }
+
+        @Override
+        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
             if (name.startsWith(PERSISTENT_FIELD_READER_PREFIX)
                     && (access & ACC_STATIC) == 0
                     && Type.getArgumentTypes(descriptor).length == 0) {
-                boolean alreadyRegistered = false;
-                for (ReadMember rm : readers) {
-                    if (rm instanceof ReadGetter rg && rg.methodName().equals(name)) {
-                        alreadyRegistered = true;
-                        break;
-                    }
-                }
-                if (!alreadyRegistered) {
-                    Type returnType = Type.getReturnType(descriptor);
-                    int sort = returnType.getSort();
-                    boolean isPrimitive = sort >= Type.BOOLEAN && sort <= Type.DOUBLE;
-                    discoveredReaders.add(new ReadGetter(
-                            className.replace('/', '.'),
-                            name,
-                            descriptor,
-                            isPrimitive,
-                            isInterface,
-                            returnType.getDescriptor()));
-                }
+
+                Type returnType = Type.getReturnType(descriptor);
+                int sort = returnType.getSort();
+
+                readers.add(new MethodMetadata(
+                        name,
+                        descriptor,
+                        sort >= Type.BOOLEAN && sort <= Type.DOUBLE,
+                        nameToFqcn(className),
+                        isInterface,
+                        returnType.getDescriptor()));
             }
             return super.visitMethod(access, name, descriptor, signature, exceptions);
         }
 
         @Override
         public void visitEnd() {
-            if (!discoveredReaders.isEmpty()) {
-                readers.addAll(discoveredReaders);
-            }
             generateReadMethod();
             generateWriteMethod();
             generateCreateMethod();
@@ -130,29 +134,36 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
         private void generateAccessorMethods() {
             List<NameAndIndex> fieldReaderEntries = new ArrayList<>();
             List<NameAndIndex> methodReaderEntries = new ArrayList<>();
-            for (int i = 0; i < readers.size(); i++) {
-                ReadMember rm = readers.get(i);
-                if (rm instanceof ReadField rf) {
-                    fieldReaderEntries.add(new NameAndIndex(rf.fieldName(), i));
-                } else if (rm instanceof ReadGetter rg) {
-                    methodReaderEntries.add(new NameAndIndex(rg.methodName(), i));
+            {
+                int index = 0;
+                for (MemberMetadata member : readers) {
+                    if (member instanceof FieldMetadata) {
+                        fieldReaderEntries.add(new NameAndIndex(member.name(), index++));
+                    } else {
+                        methodReaderEntries.add(new NameAndIndex(member.name(), index++));
+                    }
                 }
             }
 
             List<NameAndIndex> fieldWriterEntries = new ArrayList<>();
             List<NameAndIndex> methodWriterEntries = new ArrayList<>();
-            for (int i = 0; i < writers.size(); i++) {
-                WriteMember wm = writers.get(i);
-                if (wm instanceof WriteField wf) {
-                    fieldWriterEntries.add(new NameAndIndex(wf.fieldName(), i));
-                } else if (wm instanceof WriteSetter ws) {
-                    methodWriterEntries.add(new NameAndIndex(ws.methodName(), i));
+            {
+                int index = 0;
+                for (MemberMetadata member : writers) {
+                    if (member instanceof FieldMetadata) {
+                        fieldWriterEntries.add(new NameAndIndex(member.name(), index++));
+                    } else {
+                        methodWriterEntries.add(new NameAndIndex(member.name(), index++));
+                    }
                 }
             }
 
             List<NameAndIndex> instantiatorEntries = new ArrayList<>();
-            for (int i = 0; i < constructors.size(); i++) {
-                instantiatorEntries.add(new NameAndIndex(constructors.get(i).descriptor(), i));
+            {
+                int index = 0;
+                for (ConstructorMetadata constructor : constructors) {
+                    instantiatorEntries.add(new NameAndIndex(constructor.descriptor(), index++));
+                }
             }
 
             generateAccessorMethod(FIELD_READER, fieldReaderEntries,
@@ -290,18 +301,19 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             if (count <= SWITCH_CHUNK_SIZE) {
                 generateReadSwitch(READ_METHOD, descriptor, readers, 0);
             } else {
+                ArrayList<MemberMetadata> memberList = new ArrayList<>(readers);
                 for (int chunk = 0; chunk * SWITCH_CHUNK_SIZE < count; chunk++) {
                     int start = chunk * SWITCH_CHUNK_SIZE;
                     int end = Math.min(start + SWITCH_CHUNK_SIZE, count);
                     generateReadSwitch(READ_METHOD + "$" + chunk, descriptor,
-                            readers.subList(start, end), start);
+                            memberList.subList(start, end), start);
                 }
                 generateChunkDispatcher(READ_METHOD, descriptor, count, false);
             }
         }
 
         private void generateReadSwitch(String methodName, String descriptor,
-                List<ReadMember> members, int indexOffset) {
+                Collection<MemberMetadata> members, int indexOffset) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
             MethodVisitor mv = cv.visitMethod(accessFlags, methodName, descriptor, null, null);
             mv.visitCode();
@@ -316,26 +328,26 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             mv.visitVarInsn(ILOAD, 0);
             mv.visitTableSwitchInsn(indexOffset, indexOffset + count - 1, defaultLabel, labels);
 
-            for (int i = 0; i < count; i++) {
-                mv.visitLabel(labels[i]);
+            int index = 0;
+            for (MemberMetadata member : members) {
+                mv.visitLabel(labels[index++]);
                 mv.visitFrame(F_SAME, 0, null, 0, null);
 
-                ReadMember member = members.get(i);
                 String targetClass = fqcnToName(member.declaringClass());
 
                 mv.visitVarInsn(ALOAD, 1);
                 mv.visitTypeInsn(CHECKCAST, targetClass);
 
-                if (member instanceof ReadField rf) {
-                    mv.visitFieldInsn(GETFIELD, targetClass, rf.fieldName(), rf.descriptor());
-                    if (rf.isPrimitive()) {
-                        boxPrimitive(mv, rf.descriptor());
+                if (member instanceof FieldMetadata fm) {
+                    mv.visitFieldInsn(GETFIELD, targetClass, fm.name(), fm.descriptor());
+                    if (fm.isPrimitive()) {
+                        boxPrimitive(mv, fm.descriptor());
                     }
-                } else if (member instanceof ReadGetter rg) {
-                    int opcode = rg.isInterface() ? INVOKEINTERFACE : INVOKEVIRTUAL;
-                    mv.visitMethodInsn(opcode, targetClass, rg.methodName(), rg.descriptor(), rg.isInterface());
-                    if (rg.isPrimitive()) {
-                        boxPrimitive(mv, rg.returnDescriptor());
+                } else if (member instanceof MethodMetadata mm) {
+                    int opcode = mm.isInterface() ? INVOKEINTERFACE : INVOKEVIRTUAL;
+                    mv.visitMethodInsn(opcode, targetClass, mm.name(), mm.descriptor(), mm.isInterface());
+                    if (mm.isPrimitive()) {
+                        boxPrimitive(mv, mm.returnDescriptor());
                     }
                 }
 
@@ -362,18 +374,19 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             if (count <= SWITCH_CHUNK_SIZE) {
                 generateWriteSwitch(WRITE_METHOD, descriptor, writers, 0);
             } else {
+                ArrayList<MemberMetadata> memberList = new ArrayList<>(writers);
                 for (int chunk = 0; chunk * SWITCH_CHUNK_SIZE < count; chunk++) {
                     int start = chunk * SWITCH_CHUNK_SIZE;
                     int end = Math.min(start + SWITCH_CHUNK_SIZE, count);
                     generateWriteSwitch(WRITE_METHOD + "$" + chunk, descriptor,
-                            writers.subList(start, end), start);
+                            memberList.subList(start, end), start);
                 }
                 generateChunkDispatcher(WRITE_METHOD, descriptor, count, true);
             }
         }
 
         private void generateWriteSwitch(String methodName, String descriptor,
-                List<WriteMember> members, int indexOffset) {
+                Collection<MemberMetadata> members, int indexOffset) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
             MethodVisitor mv = cv.visitMethod(accessFlags, methodName, descriptor, null, null);
             mv.visitCode();
@@ -388,11 +401,11 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             mv.visitVarInsn(ILOAD, 0);
             mv.visitTableSwitchInsn(indexOffset, indexOffset + count - 1, defaultLabel, labels);
 
-            for (int i = 0; i < count; i++) {
-                mv.visitLabel(labels[i]);
+            int index = 0;
+            for (MemberMetadata member : members) {
+                mv.visitLabel(labels[index++]);
                 mv.visitFrame(F_SAME, 0, null, 0, null);
 
-                WriteMember member = members.get(i);
                 String targetClass = fqcnToName(member.declaringClass());
 
                 mv.visitVarInsn(ALOAD, 1);
@@ -400,24 +413,24 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
 
                 mv.visitVarInsn(ALOAD, 2);
 
-                if (member instanceof WriteField wf) {
-                    if (wf.isPrimitive()) {
-                        AsmUtil.unboxIfRequired(mv, Type.getType(wf.descriptor()));
+                if (member instanceof FieldMetadata fm) {
+                    if (fm.isPrimitive()) {
+                        AsmUtil.unboxIfRequired(mv, Type.getType(fm.descriptor()));
                     } else {
-                        mv.visitTypeInsn(CHECKCAST, Type.getType(wf.descriptor()).getInternalName());
+                        mv.visitTypeInsn(CHECKCAST, Type.getType(fm.descriptor()).getInternalName());
                     }
-                    mv.visitFieldInsn(PUTFIELD, targetClass, wf.fieldName(), wf.descriptor());
-                } else if (member instanceof WriteSetter ws) {
-                    Type paramType = Type.getArgumentTypes(ws.descriptor())[0];
-                    if (ws.isPrimitive()) {
+                    mv.visitFieldInsn(PUTFIELD, targetClass, fm.name(), fm.descriptor());
+                } else if (member instanceof MethodMetadata mm) {
+                    Type paramType = Type.getArgumentTypes(mm.descriptor())[0];
+                    if (mm.isPrimitive()) {
                         AsmUtil.unboxIfRequired(mv, paramType);
                     } else {
                         mv.visitTypeInsn(CHECKCAST, paramType.getInternalName());
                     }
-                    int opcode = ws.isInterface() ? INVOKEINTERFACE : INVOKEVIRTUAL;
-                    mv.visitMethodInsn(opcode, targetClass, ws.methodName(), ws.descriptor(), ws.isInterface());
-                    if (!"V".equals(ws.returnDescriptor())) {
-                        Type returnType = Type.getType(ws.returnDescriptor());
+                    int opcode = mm.isInterface() ? INVOKEINTERFACE : INVOKEVIRTUAL;
+                    mv.visitMethodInsn(opcode, targetClass, mm.name(), mm.descriptor(), mm.isInterface());
+                    if (!"V".equals(mm.returnDescriptor())) {
+                        Type returnType = Type.getType(mm.returnDescriptor());
                         if (returnType.getSize() == 2) {
                             mv.visitInsn(POP2);
                         } else {
@@ -449,18 +462,19 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             if (count <= SWITCH_CHUNK_SIZE) {
                 generateCreateSwitch(CREATE_METHOD, descriptor, constructors, 0);
             } else {
+                ArrayList<ConstructorMetadata> memberList = new ArrayList<>(constructors);
                 for (int chunk = 0; chunk * SWITCH_CHUNK_SIZE < count; chunk++) {
                     int start = chunk * SWITCH_CHUNK_SIZE;
                     int end = Math.min(start + SWITCH_CHUNK_SIZE, count);
                     generateCreateSwitch(CREATE_METHOD + "$" + chunk, descriptor,
-                            constructors.subList(start, end), start);
+                            memberList.subList(start, end), start);
                 }
                 generateChunkDispatcher(CREATE_METHOD, descriptor, count, false);
             }
         }
 
         private void generateCreateSwitch(String methodName, String descriptor,
-                List<ConstructorMetadata> ctors, int indexOffset) {
+                Collection<ConstructorMetadata> ctors, int indexOffset) {
             int accessFlags = ACC_PUBLIC | ACC_STATIC;
             MethodVisitor mv = cv.visitMethod(accessFlags, methodName, descriptor, null, null);
             mv.visitCode();
@@ -475,11 +489,11 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
             mv.visitVarInsn(ILOAD, 0);
             mv.visitTableSwitchInsn(indexOffset, indexOffset + count - 1, defaultLabel, labels);
 
-            for (int i = 0; i < count; i++) {
-                mv.visitLabel(labels[i]);
+            int index = 0;
+            for (ConstructorMetadata ctor : ctors) {
+                mv.visitLabel(labels[index++]);
                 mv.visitFrame(F_SAME, 0, null, 0, null);
 
-                ConstructorMetadata ctor = ctors.get(i);
                 String targetClass = fqcnToName(ctor.declaringClass());
 
                 mv.visitTypeInsn(NEW, targetClass);
@@ -605,37 +619,5 @@ class HibernateAccessorHostClassFunction implements BiFunction<String, ClassVisi
     }
 
     record NameAndIndex(String name, int index) {
-    }
-
-    sealed interface ReadMember {
-        String declaringClass();
-
-        String descriptor();
-
-        boolean isPrimitive();
-    }
-
-    record ReadField(String declaringClass, String fieldName, String descriptor, boolean isPrimitive) implements ReadMember {
-    }
-
-    record ReadGetter(String declaringClass, String methodName, String descriptor,
-            boolean isPrimitive, boolean isInterface, String returnDescriptor) implements ReadMember {
-    }
-
-    sealed interface WriteMember {
-        String declaringClass();
-
-        String descriptor();
-
-        boolean isPrimitive();
-    }
-
-    record WriteField(String declaringClass, String fieldName, String descriptor, boolean isPrimitive)
-            implements
-                WriteMember {
-    }
-
-    record WriteSetter(String declaringClass, String methodName, String descriptor,
-            boolean isPrimitive, boolean isInterface, String returnDescriptor) implements WriteMember {
     }
 }

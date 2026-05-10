@@ -1,5 +1,8 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static java.util.Comparator.naturalOrder;
+import static java.util.Comparator.nullsFirst;
+
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -72,6 +75,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         private final String type;
         private final String host;
         private final boolean hostIsPublic;
+        private final boolean hostIsInterface;
         private final boolean record;
         private Set<FieldMetadata> fields;
         private Set<MethodMetadata> getters;
@@ -83,14 +87,17 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             this.type = modelClass.name().toString();
             this.host = modelClass.name().toString();
             this.hostIsPublic = Modifier.isPublic(modelClass.flags());
+            this.hostIsInterface = Modifier.isInterface(modelClass.flags());
             this.record = modelClass.isRecord();
         }
 
-        public Builder(String packageName, String type, String host, boolean hostIsPublic, boolean record) {
+        public Builder(String packageName, String type, String host, boolean hostIsPublic, boolean hostIsInterface,
+                boolean record) {
             this.packageName = packageName;
             this.type = type;
             this.host = host;
             this.hostIsPublic = hostIsPublic;
+            this.hostIsInterface = hostIsInterface;
             this.record = record;
         }
 
@@ -100,7 +107,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type fieldType = field.type();
             this.fields.add(new FieldMetadata(field.name(), fieldType.descriptor(), fieldType.kind() == Type.Kind.PRIMITIVE,
-                    field.declaringClass().name().toString(), host, record));
+                    field.declaringClass().name().toString(), record));
 
             return this;
         }
@@ -111,7 +118,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type returnType = getter.returnType();
             this.getters.add(new MethodMetadata(getter.name(), getter.descriptor(),
-                    returnType.kind() == Type.Kind.PRIMITIVE, getter.declaringClass().name().toString(), host,
+                    returnType.kind() == Type.Kind.PRIMITIVE, getter.declaringClass().name().toString(),
                     Modifier.isInterface(getter.declaringClass().flags()), returnType.descriptor()));
 
             return this;
@@ -123,7 +130,7 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
             }
             Type valueType = setter.parameterType(0);
             this.setters.add(new MethodMetadata(setter.name(), setter.descriptor(), valueType.kind() == Type.Kind.PRIMITIVE,
-                    setter.declaringClass().name().toString(), host,
+                    setter.declaringClass().name().toString(),
                     Modifier.isInterface(setter.declaringClass().flags()), setter.returnType().descriptor()));
 
             return this;
@@ -183,13 +190,18 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
         }
 
         public HibernateAccessorBuildItem build() {
-            return new HibernateAccessorBuildItem(new TypeMetadata(packageName, type, host, hostIsPublic), fields, getters,
+            return new HibernateAccessorBuildItem(new TypeMetadata(packageName, type, host, hostIsPublic, hostIsInterface),
+                    fields, getters,
                     setters,
                     constructors);
         }
     }
 
-    public interface MemberMetadata {
+    public interface MemberMetadata extends Comparable<MemberMetadata> {
+        Comparator<MemberMetadata> COMPARATOR = Comparator.comparing(MemberMetadata::declaringClass, nullsFirst(naturalOrder()))
+                .thenComparing(MemberMetadata::name, nullsFirst(naturalOrder()))
+                .thenComparing(MemberMetadata::descriptor, nullsFirst(naturalOrder()));
+
         String name();
 
         String descriptor();
@@ -198,32 +210,53 @@ public final class HibernateAccessorBuildItem extends MultiBuildItem implements 
 
         String declaringClass();
 
-        String host();
+        @Override
+        default int compareTo(MemberMetadata o) {
+            return MemberMetadata.COMPARATOR.compare(this, o);
+        }
     }
 
     public record FieldMetadata(String name, String descriptor, boolean isPrimitive,
-            String declaringClass, String host, boolean readOnly) implements MemberMetadata {
+            String declaringClass, boolean readOnly) implements MemberMetadata {
     }
 
     public record MethodMetadata(String name, String descriptor, boolean isPrimitive,
-            String declaringClass, String host, boolean isInterface, String returnDescriptor) implements MemberMetadata {
+            String declaringClass, boolean isInterface,
+            String returnDescriptor) implements MemberMetadata {
     }
 
     public record ConstructorMetadata(String declaringClass, String host, String descriptor,
-            List<ParameterMetadata> parameters) {
+            List<ParameterMetadata> parameters) implements Comparable<ConstructorMetadata> {
+
+        private static final Comparator<ConstructorMetadata> COMPARATOR = Comparator
+                .comparing(ConstructorMetadata::declaringClass, nullsFirst(naturalOrder()))
+                .thenComparing(ConstructorMetadata::descriptor, nullsFirst(naturalOrder()));
+
+        @Override
+        public int compareTo(ConstructorMetadata o) {
+            return COMPARATOR.compare(this, o);
+        }
     }
 
     public record ParameterMetadata(String name, String descriptor, boolean isPrimitive) {
     }
 
     public record TypeMetadata(String packageName, String name, String host,
-            boolean isPublic) implements Comparable<TypeMetadata> {
+            boolean isPublic, boolean isInterface) implements Comparable<TypeMetadata> {
 
-        public TypeMetadata(String packageName, String name, String host, boolean isPublic) {
+        public TypeMetadata(String packageName, String name, String host, boolean isPublic, boolean isInterface) {
             this.packageName = packageName == null ? "" : packageName;
             this.name = name;
             this.host = host;
             this.isPublic = isPublic;
+            this.isInterface = isInterface;
+        }
+
+        String dispatchTarget() {
+            if (!isPublic() && !isInterface()) {
+                return HibernateAccessorBridgeGenerator.bridgeFqcn(host);
+            }
+            return host;
         }
 
         private static final Comparator<TypeMetadata> COMPARATOR = Comparator.comparing(TypeMetadata::packageName)

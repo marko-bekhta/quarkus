@@ -1,14 +1,14 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.*;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.AnnotationTarget;
@@ -30,13 +30,7 @@ import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBridgeGenerator
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.Builder;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.ConstructorMetadata;
 import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.FieldMetadata;
-import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MethodMetadata;
-import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.ReadField;
-import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.ReadGetter;
-import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.ReadMember;
-import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WriteField;
-import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WriteMember;
-import io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WriteSetter;
+import io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.MemberMetadata;
 import io.quarkus.hibernate.accessor.runtime.HibernateAccessorRecorder;
 import io.quarkus.hibernate.accessor.runtime.ReflectionFreeAccessor;
 
@@ -102,114 +96,62 @@ class HibernateAccessorProcessor {
             BuildProducer<GeneratedClassBuildItem> generatedClasses,
             BuildProducer<BytecodeTransformerBuildItem> transformer) {
 
-        Map<String, HostData> hostDataMap = new LinkedHashMap<>();
-        Set<Object> processedMembers = new HashSet<>();
-        String currentType = null;
+        List<HostData> hosts = new ArrayList<>();
+        HostData currentType = null;
 
         for (HibernateAccessorBuildItem accessItem : hibernateAccessorBuildItemList) {
-            String host = accessItem.getType().host();
-            HostData hostData = hostDataMap.computeIfAbsent(host, k -> new HostData());
-            if (!accessItem.getType().isPublic()) {
-                hostData.isPublic = false;
-            }
-
-            if (!accessItem.getType().name().equals(currentType)) {
-                currentType = accessItem.getType().name();
-                processedMembers.clear();
+            if (currentType == null || !accessItem.getType().name().equals(currentType.type().name())) {
+                currentType = new HostData(accessItem.getType());
+                hosts.add(currentType);
             }
 
             for (FieldMetadata field : accessItem.getFields()) {
-                if (processedMembers.add(field)) {
-                    hostData.readers.add(new ReadField(field.declaringClass(), field.name(),
-                            field.descriptor(), field.isPrimitive()));
-                    hostData.hasFieldReaders = true;
+                currentType.readers.add(field);
 
-                    if (!field.readOnly()) {
-                        hostData.writers.add(new WriteField(field.declaringClass(), field.name(),
-                                field.descriptor(), field.isPrimitive()));
-                        hostData.hasFieldWriters = true;
-                    }
+                if (!field.readOnly()) {
+                    currentType.writers.add(field);
                 }
             }
 
-            for (MethodMetadata getter : accessItem.getGetters()) {
-                if (processedMembers.add(getter)) {
-                    if (getter.isInterface() && getter.declaringClass().equals(host)) {
-                        hostData.isInterface = true;
-                    }
-                    hostData.readers.add(new ReadGetter(getter.declaringClass(), getter.name(),
-                            getter.descriptor(), getter.isPrimitive(), getter.isInterface(), getter.returnDescriptor()));
-                    hostData.hasMethodReaders = true;
-                }
-            }
-
-            for (MethodMetadata setter : accessItem.getSetters()) {
-                if (processedMembers.add(setter)) {
-                    if (setter.isInterface() && setter.declaringClass().equals(host)) {
-                        hostData.isInterface = true;
-                    }
-                    hostData.writers.add(new WriteSetter(setter.declaringClass(), setter.name(),
-                            setter.descriptor(), setter.isPrimitive(), setter.isInterface(), setter.returnDescriptor()));
-                    hostData.hasMethodWriters = true;
-                }
-            }
-
-            for (ConstructorMetadata ctor : accessItem.getConstructors()) {
-                if (processedMembers.add(ctor)) {
-                    hostData.constructors.add(ctor);
-                }
-            }
+            currentType.readers.addAll(accessItem.getGetters());
+            currentType.writers.addAll(accessItem.getSetters());
+            currentType.constructors.addAll(accessItem.getConstructors());
         }
 
         HibernateAccessorFactoryImplementation factoryImpl = new HibernateAccessorFactoryImplementation();
         HibernateAccessorBridgeGenerator bridgeGen = new HibernateAccessorBridgeGenerator();
 
-        List<String> hosts = new ArrayList<>();
-        Set<String> interfaceHosts = new HashSet<>();
-
-        for (Map.Entry<String, HostData> entry : hostDataMap.entrySet()) {
-            String host = entry.getKey();
-            HostData data = entry.getValue();
-
-            if (data.isInterface) {
-                interfaceHosts.add(host);
-            }
-
-            boolean needsBridge = !data.isPublic && !data.isInterface;
-            String dispatchTarget = needsBridge ? HibernateAccessorBridgeGenerator.bridgeFqcn(host) : host;
+        int currentClassIndex = 0;
+        for (HostData data : hosts) {
+            boolean needsBridge = !data.type().isPublic() && !data.type().isInterface();
+            String dispatchTarget = needsBridge ? HibernateAccessorBridgeGenerator.bridgeFqcn(data.type().host())
+                    : data.type().host();
             String dispatchTargetInternal = fqcnToName(dispatchTarget);
 
-            int classIndex = hosts.size();
-            hosts.add(dispatchTarget);
+            // hosts.add(dispatchTarget);
 
             // Always register the host for all accessor types
-            factoryImpl.registerDispatchTarget(host, dispatchTargetInternal, data.isInterface);
-            factoryImpl.registerFieldReader(host);
-            factoryImpl.registerMethodReader(host);
-            factoryImpl.registerFieldWriter(host);
-            factoryImpl.registerMethodWriter(host);
-            factoryImpl.registerInstantiator(host);
+            factoryImpl.registerDispatchTarget(data.type().host(), dispatchTargetInternal, data.type().isInterface());
+            factoryImpl.registerFieldReader(data.type().host());
+            factoryImpl.registerMethodReader(data.type().host());
+            factoryImpl.registerFieldWriter(data.type().host());
+            factoryImpl.registerMethodWriter(data.type().host());
+            factoryImpl.registerInstantiator(data.type().host());
 
             // Also register declaring classes of actual members (for inheritance)
-            Set<String> registeredDCs = new HashSet<>();
-            registeredDCs.add(host);
-            for (ReadMember rm : data.readers) {
+            for (MemberMetadata rm : data.readers) {
                 String dc = rm.declaringClass();
-                if (registeredDCs.add(dc)) {
-                    factoryImpl.registerDispatchTarget(dc, dispatchTargetInternal, data.isInterface);
-                }
-                if (rm instanceof ReadField) {
+                factoryImpl.registerDispatchTarget(dc, dispatchTargetInternal, data.type().isInterface());
+                if (rm instanceof FieldMetadata) {
                     factoryImpl.registerFieldReader(dc);
                 } else {
                     factoryImpl.registerMethodReader(dc);
                 }
             }
-            for (WriteMember wm : data.writers) {
+            for (MemberMetadata wm : data.writers) {
                 String dc = wm.declaringClass();
-                if (registeredDCs.add(dc)) {
-                    factoryImpl.registerDispatchTarget(dc, dispatchTargetInternal, data.isInterface);
-                }
-                if (wm instanceof WriteField) {
+                factoryImpl.registerDispatchTarget(dc, dispatchTargetInternal, data.type().isInterface());
+                if (wm instanceof FieldMetadata) {
                     factoryImpl.registerFieldWriter(dc);
                 } else {
                     factoryImpl.registerMethodWriter(dc);
@@ -217,9 +159,7 @@ class HibernateAccessorProcessor {
             }
             for (ConstructorMetadata ctor : data.constructors) {
                 String dc = ctor.declaringClass();
-                if (registeredDCs.add(dc)) {
-                    factoryImpl.registerDispatchTarget(dc, dispatchTargetInternal, data.isInterface);
-                }
+                factoryImpl.registerDispatchTarget(dc, dispatchTargetInternal, data.type().isInterface());
                 factoryImpl.registerInstantiator(dc);
             }
 
@@ -243,16 +183,18 @@ class HibernateAccessorProcessor {
 
             if (needsBridge) {
                 generatedClasses.produce(new GeneratedClassBuildItem(true,
-                        HibernateAccessorBridgeGenerator.bridgeFqcn(host),
-                        bridgeGen.generate(host, true, true, true, accessorMethods)));
+                        HibernateAccessorBridgeGenerator.bridgeFqcn(data.type().host()),
+                        bridgeGen.generate(data.type().host(), true, true, true, accessorMethods)));
             }
 
             transformer.produce(new BytecodeTransformerBuildItem.Builder()
-                    .setClassToTransform(host)
+                    .setClassToTransform(data.type().host())
                     .setCacheable(true)
-                    .setPriority(-2)
+                    // We need to make sure that we run this transformation
+                    // *after* Hibernate ORM and Panache are done with their changes:
+                    .setPriority(HibernateAccessorHostClassFunction.ACCESSOR_TRANSFORMATION_PRIORITY)
                     .setVisitorFunction(new HibernateAccessorHostClassFunction(
-                            data.readers, data.writers, data.constructors, classIndex))
+                            data.readers, data.writers, data.constructors, currentClassIndex++))
                     .build());
         }
 
@@ -260,13 +202,13 @@ class HibernateAccessorProcessor {
 
         generatedClasses.produce(new GeneratedClassBuildItem(true,
                 HibernateAccessorSingleImplGenerator.READER_IMPL,
-                implGen.generateReaderImpl(hosts, interfaceHosts)));
+                implGen.generateReaderImpl(hosts)));
         generatedClasses.produce(new GeneratedClassBuildItem(true,
                 HibernateAccessorSingleImplGenerator.WRITER_IMPL,
-                implGen.generateWriterImpl(hosts, interfaceHosts)));
+                implGen.generateWriterImpl(hosts)));
         generatedClasses.produce(new GeneratedClassBuildItem(true,
                 HibernateAccessorSingleImplGenerator.INSTANTIATOR_IMPL,
-                implGen.generateInstantiatorImpl(hosts, interfaceHosts)));
+                implGen.generateInstantiatorImpl(hosts)));
 
         generatedClasses.produce(new GeneratedClassBuildItem(true,
                 HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY,
@@ -292,15 +234,13 @@ class HibernateAccessorProcessor {
                 recorder.createAccessorFactory(HibernateAccessorFactoryImplementation.QUARKUS_HIBERNATE_ACCESSOR_FACTORY));
     }
 
-    private static class HostData {
-        final List<ReadMember> readers = new ArrayList<>();
-        final List<WriteMember> writers = new ArrayList<>();
-        final List<ConstructorMetadata> constructors = new ArrayList<>();
-        boolean hasFieldReaders;
-        boolean hasMethodReaders;
-        boolean hasFieldWriters;
-        boolean hasMethodWriters;
-        boolean isInterface;
-        boolean isPublic = true;
+    record HostData(TypeMetadata type,
+            Set<MemberMetadata> readers,
+            Set<MemberMetadata> writers,
+            Set<ConstructorMetadata> constructors) {
+
+        private HostData(TypeMetadata type) {
+            this(type, new TreeSet<>(), new TreeSet<>(), new TreeSet<>());
+        }
     }
 }

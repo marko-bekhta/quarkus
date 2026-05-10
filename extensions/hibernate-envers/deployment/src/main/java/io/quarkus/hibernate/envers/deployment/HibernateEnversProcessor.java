@@ -55,7 +55,7 @@ public final class HibernateEnversProcessor {
                 .methods().build());
         for (String klass : ENVERS_CLASSES_FOR_REFLECTION) {
             accessorBuildItemBuildProducer.produce(new HibernateAccessorBuildItem.Builder(
-                    klass.substring(0, klass.lastIndexOf('.')), klass, klass, true, false).addDefaultConstructor()
+                    klass.substring(0, klass.lastIndexOf('.')), klass, klass, true, false, false).addDefaultConstructor()
                     .build());
         }
 
