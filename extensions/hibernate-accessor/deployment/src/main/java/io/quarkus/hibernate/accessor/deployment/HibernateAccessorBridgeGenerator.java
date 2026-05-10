@@ -1,26 +1,20 @@
 package io.quarkus.hibernate.accessor.deployment;
 
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.CREATE_METHOD;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.READ_METHOD;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WRITE_METHOD;
-
-import java.util.List;
 
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-class HibernateAccessorBridgeGenerator implements Opcodes {
+class HibernateAccessorBridgeGenerator implements Opcodes, HibernateAccessorGeneratorConstants {
 
-    static final String BRIDGE_SUFFIX = "$$HibernateAccessorBridge";
+    private static final String BRIDGE_SUFFIX = "$$HibernateAccessorBridge";
 
     static String bridgeFqcn(String hostFqcn) {
         return hostFqcn + BRIDGE_SUFFIX;
     }
 
-    byte[] generate(String hostFqcn, boolean hasReaders, boolean hasWriters, boolean hasConstructors,
-            List<MethodForward> accessorMethods) {
+    byte[] generate(String hostFqcn) {
         String bridgeName = fqcnToName(bridgeFqcn(hostFqcn));
         String hostName = fqcnToName(hostFqcn);
 
@@ -28,31 +22,29 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER | ACC_SYNTHETIC, bridgeName,
                 null, "java/lang/Object", null);
 
-        if (hasReaders) {
-            generateForward(cw, READ_METHOD,
-                    "(ILjava/lang/Object;)Ljava/lang/Object;", hostName, false);
-        }
-        if (hasWriters) {
-            generateForward(cw, WRITE_METHOD,
-                    "(ILjava/lang/Object;Ljava/lang/Object;)V", hostName, true);
-        }
-        if (hasConstructors) {
-            generateForward(cw, CREATE_METHOD,
-                    "(I[Ljava/lang/Object;)Ljava/lang/Object;", hostName, false);
-        }
+        generateForward(cw, PREFIX_READ_METHOD, "(ILjava/lang/Object;)Ljava/lang/Object;", hostName);
+        generateForward(cw, PREFIX_WRITE_METHOD, "(ILjava/lang/Object;Ljava/lang/Object;)V", hostName);
+        generateForward(cw, PREFIX_CREATE_METHOD, "(I[Ljava/lang/Object;)Ljava/lang/Object;", hostName);
 
-        for (MethodForward forward : accessorMethods) {
-            generateForward(cw, forward.name(), forward.descriptor(), hostName, false);
-        }
+        // Always include all accessor method forwards for bridge
+        generateForward(cw, METHOD_NAME_FIELD_READER_ACCESSOR, accessorMethodDescriptor(READER_INTERFACE_INTERNAL), hostName);
+        generateForward(cw, METHOD_NAME_METHOD_READER_ACCESSOR, accessorMethodDescriptor(READER_INTERFACE_INTERNAL), hostName);
+        generateForward(cw, METHOD_NAME_FIELD_WRITER_ACCESSOR, accessorMethodDescriptor(WRITER_INTERFACE_INTERNAL), hostName);
+        generateForward(cw, METHOD_NAME_METHOD_WRITER_ACCESSOR, accessorMethodDescriptor(WRITER_INTERFACE_INTERNAL), hostName);
+        generateForward(cw, METHOD_NAME_INSTANTIATOR_ACCESSOR, accessorMethodDescriptor(INSTANTIATOR_INTERFACE_INTERNAL),
+                hostName);
 
         cw.visitEnd();
         return cw.toByteArray();
     }
 
+    private static String accessorMethodDescriptor(String name) {
+        return "(Ljava/lang/String;)L" + name + ";";
+    }
+
     private static void generateForward(ClassWriter cw, String methodName, String descriptor,
-            String hostName, boolean returnsVoid) {
-        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC,
-                methodName, descriptor, null, null);
+            String hostName) {
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC, methodName, descriptor, null, null);
         mv.visitCode();
 
         org.objectweb.asm.Type[] argTypes = org.objectweb.asm.Type.getArgumentTypes(descriptor);
@@ -68,8 +60,5 @@ class HibernateAccessorBridgeGenerator implements Opcodes {
 
         mv.visitMaxs(argTypes.length, argTypes.length);
         mv.visitEnd();
-    }
-
-    record MethodForward(String name, String descriptor) {
     }
 }

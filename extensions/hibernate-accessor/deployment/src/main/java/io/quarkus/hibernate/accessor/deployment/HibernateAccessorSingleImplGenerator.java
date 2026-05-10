@@ -1,39 +1,27 @@
 package io.quarkus.hibernate.accessor.deployment;
 
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorBuildItem.TypeMetadata;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.SWITCH_CHUNK_SIZE;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.CREATE_METHOD;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.READ_METHOD;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WRITE_METHOD;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.pushIntConst;
+import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorProcessor.ProcessedHostData;
 
 import java.util.List;
-import java.util.Set;
 
-import org.hibernate.accessor.HibernateAccessorInstantiator;
-import org.hibernate.accessor.HibernateAccessorValueReader;
-import org.hibernate.accessor.HibernateAccessorValueWriter;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-class HibernateAccessorSingleImplGenerator implements Opcodes {
+class HibernateAccessorSingleImplGenerator implements Opcodes, HibernateAccessorGeneratorConstants {
 
-    static final String READER_IMPL = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorValueReaderImpl";
-    static final String WRITER_IMPL = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorValueWriterImpl";
-    static final String INSTANTIATOR_IMPL = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorInstantiatorImpl";
-
-    private static final String READER_INTERFACE = fqcnToName(HibernateAccessorValueReader.class.getName());
-    private static final String WRITER_INTERFACE = fqcnToName(HibernateAccessorValueWriter.class.getName());
-    private static final String INSTANTIATOR_INTERFACE = fqcnToName(HibernateAccessorInstantiator.class.getName());
-
-    byte[] generateReaderImpl(List<String> hostClasses, Set<String> interfaceHosts) {
-        String className = fqcnToName(READER_IMPL);
+    byte[] generateReaderImpl(List<ProcessedHostData> hostClasses) {
+        String className = fqcnToName(GENERATED_READER_IMPL);
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, className,
-                "Ljava/lang/Object;L" + READER_INTERFACE + "<Ljava/lang/Object;>;",
-                "java/lang/Object", new String[] { READER_INTERFACE });
+                "Ljava/lang/Object;L" + READER_INTERFACE_INTERNAL + "<Ljava/lang/Object;>;",
+                "java/lang/Object", new String[] { READER_INTERFACE_INTERNAL });
 
         generateIndexFields(cw);
         generateIndexConstructor(cw, className);
@@ -42,26 +30,26 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         if (hostClasses.size() <= SWITCH_CHUNK_SIZE) {
             MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "get", methodDesc, null, null);
             mv.visitCode();
-            generateDispatchSwitch(mv, className, hostClasses, interfaceHosts, READ_METHOD,
-                    "(ILjava/lang/Object;)Ljava/lang/Object;", 1);
+            generateDispatchSwitch(mv, className, hostClasses, PREFIX_READ_METHOD, "(ILjava/lang/Object;)Ljava/lang/Object;",
+                    1);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         } else {
-            generateChunkedDispatch(cw, className, "get", methodDesc, hostClasses, interfaceHosts,
-                    READ_METHOD, "(ILjava/lang/Object;)Ljava/lang/Object;", 1, false);
+            generateChunkedDispatch(cw, className, "get", methodDesc, hostClasses, PREFIX_READ_METHOD,
+                    "(ILjava/lang/Object;)Ljava/lang/Object;", 1, false);
         }
 
         cw.visitEnd();
         return cw.toByteArray();
     }
 
-    byte[] generateWriterImpl(List<String> hostClasses, Set<String> interfaceHosts) {
-        String className = fqcnToName(WRITER_IMPL);
+    byte[] generateWriterImpl(List<ProcessedHostData> hostClasses) {
+        String className = fqcnToName(GENERATED_WRITER_IMPL);
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, className,
                 null,
-                "java/lang/Object", new String[] { WRITER_INTERFACE });
+                "java/lang/Object", new String[] { WRITER_INTERFACE_INTERNAL });
 
         generateIndexFields(cw);
         generateIndexConstructor(cw, className);
@@ -70,24 +58,24 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
             MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "set",
                     "(Ljava/lang/Object;Ljava/lang/Object;)V", null, null);
             mv.visitCode();
-            generateWriteDispatchSwitch(mv, className, hostClasses, interfaceHosts);
+            generateWriteDispatchSwitch(mv, className, hostClasses);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         } else {
-            generateChunkedWriteDispatch(cw, className, hostClasses, interfaceHosts);
+            generateChunkedWriteDispatch(cw, className, hostClasses);
         }
 
         cw.visitEnd();
         return cw.toByteArray();
     }
 
-    byte[] generateInstantiatorImpl(List<String> hostClasses, Set<String> interfaceHosts) {
-        String className = fqcnToName(INSTANTIATOR_IMPL);
+    byte[] generateInstantiatorImpl(List<ProcessedHostData> hostClasses) {
+        String className = fqcnToName(GENERATED_INSTANTIATOR_IMPL);
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, className,
-                "Ljava/lang/Object;L" + INSTANTIATOR_INTERFACE + "<Ljava/lang/Object;>;",
-                "java/lang/Object", new String[] { INSTANTIATOR_INTERFACE });
+                "Ljava/lang/Object;L" + INSTANTIATOR_INTERFACE_INTERNAL + "<Ljava/lang/Object;>;",
+                "java/lang/Object", new String[] { INSTANTIATOR_INTERFACE_INTERNAL });
 
         generateIndexFields(cw);
         generateIndexConstructor(cw, className);
@@ -96,13 +84,13 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         if (hostClasses.size() <= SWITCH_CHUNK_SIZE) {
             MethodVisitor mv = cw.visitMethod(ACC_PUBLIC | ACC_VARARGS, "create", methodDesc, null, null);
             mv.visitCode();
-            generateDispatchSwitch(mv, className, hostClasses, interfaceHosts, CREATE_METHOD,
-                    "(I[Ljava/lang/Object;)Ljava/lang/Object;", 1);
+            generateDispatchSwitch(mv, className, hostClasses, PREFIX_CREATE_METHOD, "(I[Ljava/lang/Object;)Ljava/lang/Object;",
+                    1);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         } else {
-            generateChunkedDispatch(cw, className, "create", methodDesc, hostClasses, interfaceHosts,
-                    CREATE_METHOD, "(I[Ljava/lang/Object;)Ljava/lang/Object;", 1, false);
+            generateChunkedDispatch(cw, className, "create", methodDesc, hostClasses, PREFIX_CREATE_METHOD,
+                    "(I[Ljava/lang/Object;)Ljava/lang/Object;", 1, false);
         }
 
         cw.visitEnd();
@@ -134,8 +122,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         mv.visitEnd();
     }
 
-    private static void generateDispatchSwitch(MethodVisitor mv, String className,
-            List<String> hostClasses, Set<String> interfaceHosts,
+    private static void generateDispatchSwitch(MethodVisitor mv, String className, List<ProcessedHostData> hostClasses,
             String staticMethodName, String staticMethodDesc, int targetArgSlot) {
         int count = hostClasses.size();
         if (count == 0) {
@@ -155,10 +142,10 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         for (int i = 0; i < count; i++) {
             mv.visitLabel(labels[i]);
             mv.visitFrame(F_SAME, 0, null, 0, null);
+            TypeMetadata type = hostClasses.get(i).type();
 
-            String hostFqcn = hostClasses.get(i);
-            String hostClass = fqcnToName(hostFqcn);
-            boolean isInterface = interfaceHosts.contains(hostFqcn);
+            String hostClass = fqcnToName(type.dispatchTarget());
+            boolean isInterface = type.isInterface();
 
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, className, "memberIndex", "I");
@@ -172,8 +159,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         throwIllegalArgumentWithClassIndex(mv, className);
     }
 
-    private static void generateWriteDispatchSwitch(MethodVisitor mv, String className,
-            List<String> hostClasses, Set<String> interfaceHosts) {
+    private static void generateWriteDispatchSwitch(MethodVisitor mv, String className, List<ProcessedHostData> hostClasses) {
         int count = hostClasses.size();
         if (count == 0) {
             throwIllegalArgumentWithClassIndex(mv, className);
@@ -193,16 +179,16 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
             mv.visitLabel(labels[i]);
             mv.visitFrame(F_SAME, 0, null, 0, null);
 
-            String hostFqcn = hostClasses.get(i);
-            String hostClass = fqcnToName(hostFqcn);
-            boolean isInterface = interfaceHosts.contains(hostFqcn);
+            TypeMetadata type = hostClasses.get(i).type();
+            String hostClass = fqcnToName(type.dispatchTarget());
+            boolean isInterface = type.isInterface();
 
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, className, "memberIndex", "I");
             mv.visitVarInsn(ALOAD, 1);
             mv.visitVarInsn(ALOAD, 2);
-            mv.visitMethodInsn(INVOKESTATIC, hostClass, WRITE_METHOD,
-                    "(ILjava/lang/Object;Ljava/lang/Object;)V", isInterface);
+            mv.visitMethodInsn(INVOKESTATIC, hostClass, PREFIX_WRITE_METHOD, "(ILjava/lang/Object;Ljava/lang/Object;)V",
+                    isInterface);
             mv.visitInsn(RETURN);
         }
 
@@ -211,10 +197,8 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         throwIllegalArgumentWithClassIndex(mv, className);
     }
 
-    private void generateChunkedDispatch(ClassWriter cw, String className,
-            String publicMethodName, String publicMethodDesc,
-            List<String> hostClasses, Set<String> interfaceHosts,
-            String staticMethodName, String staticMethodDesc, int targetArgSlot,
+    private void generateChunkedDispatch(ClassWriter cw, String className, String publicMethodName, String publicMethodDesc,
+            List<ProcessedHostData> hostClasses, String staticMethodName, String staticMethodDesc, int targetArgSlot,
             boolean returnsVoid) {
         int total = hostClasses.size();
         int chunkCount = (total + SWITCH_CHUNK_SIZE - 1) / SWITCH_CHUNK_SIZE;
@@ -222,13 +206,13 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         for (int chunk = 0; chunk < chunkCount; chunk++) {
             int start = chunk * SWITCH_CHUNK_SIZE;
             int end = Math.min(start + SWITCH_CHUNK_SIZE, total);
-            List<String> chunkHosts = hostClasses.subList(start, end);
+            List<ProcessedHostData> chunkHosts = hostClasses.subList(start, end);
 
             String chunkMethodName = publicMethodName + "$" + chunk;
             MethodVisitor mv = cw.visitMethod(ACC_PRIVATE, chunkMethodName, publicMethodDesc, null, null);
             mv.visitCode();
-            generateDispatchSwitchWithOffset(mv, className, chunkHosts, interfaceHosts,
-                    staticMethodName, staticMethodDesc, targetArgSlot, start);
+            generateDispatchSwitchWithOffset(mv, className, chunkHosts, staticMethodName, staticMethodDesc, targetArgSlot,
+                    start);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         }
@@ -237,8 +221,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
                 chunkCount, returnsVoid);
     }
 
-    private void generateChunkedWriteDispatch(ClassWriter cw, String className,
-            List<String> hostClasses, Set<String> interfaceHosts) {
+    private void generateChunkedWriteDispatch(ClassWriter cw, String className, List<ProcessedHostData> hostClasses) {
         int total = hostClasses.size();
         int chunkCount = (total + SWITCH_CHUNK_SIZE - 1) / SWITCH_CHUNK_SIZE;
         String publicMethodDesc = "(Ljava/lang/Object;Ljava/lang/Object;)V";
@@ -246,12 +229,12 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         for (int chunk = 0; chunk < chunkCount; chunk++) {
             int start = chunk * SWITCH_CHUNK_SIZE;
             int end = Math.min(start + SWITCH_CHUNK_SIZE, total);
-            List<String> chunkHosts = hostClasses.subList(start, end);
+            List<ProcessedHostData> chunkHosts = hostClasses.subList(start, end);
 
             String chunkMethodName = "set$" + chunk;
             MethodVisitor mv = cw.visitMethod(ACC_PRIVATE, chunkMethodName, publicMethodDesc, null, null);
             mv.visitCode();
-            generateWriteDispatchSwitchWithOffset(mv, className, chunkHosts, interfaceHosts, start);
+            generateWriteDispatchSwitchWithOffset(mv, className, chunkHosts, start);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         }
@@ -260,7 +243,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
     }
 
     private static void generateDispatchSwitchWithOffset(MethodVisitor mv, String className,
-            List<String> hostClasses, Set<String> interfaceHosts,
+            List<ProcessedHostData> hostClasses,
             String staticMethodName, String staticMethodDesc, int targetArgSlot, int indexOffset) {
         int count = hostClasses.size();
         Label[] labels = new Label[count];
@@ -277,9 +260,9 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
             mv.visitLabel(labels[i]);
             mv.visitFrame(F_SAME, 0, null, 0, null);
 
-            String hostFqcn = hostClasses.get(i);
-            String hostClass = fqcnToName(hostFqcn);
-            boolean isInterface = interfaceHosts.contains(hostFqcn);
+            TypeMetadata type = hostClasses.get(i).type();
+            String hostClass = fqcnToName(type.dispatchTarget());
+            boolean isInterface = type.isInterface();
 
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, className, "memberIndex", "I");
@@ -294,7 +277,8 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
     }
 
     private static void generateWriteDispatchSwitchWithOffset(MethodVisitor mv, String className,
-            List<String> hostClasses, Set<String> interfaceHosts, int indexOffset) {
+            List<ProcessedHostData> hostClasses,
+            int indexOffset) {
         int count = hostClasses.size();
         Label[] labels = new Label[count];
         for (int i = 0; i < count; i++) {
@@ -310,16 +294,16 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
             mv.visitLabel(labels[i]);
             mv.visitFrame(F_SAME, 0, null, 0, null);
 
-            String hostFqcn = hostClasses.get(i);
-            String hostClass = fqcnToName(hostFqcn);
-            boolean isInterface = interfaceHosts.contains(hostFqcn);
+            TypeMetadata type = hostClasses.get(i).type();
+            String hostClass = fqcnToName(type.dispatchTarget());
+            boolean isInterface = type.isInterface();
 
             mv.visitVarInsn(ALOAD, 0);
             mv.visitFieldInsn(GETFIELD, className, "memberIndex", "I");
             mv.visitVarInsn(ALOAD, 1);
             mv.visitVarInsn(ALOAD, 2);
-            mv.visitMethodInsn(INVOKESTATIC, hostClass, WRITE_METHOD,
-                    "(ILjava/lang/Object;Ljava/lang/Object;)V", isInterface);
+            mv.visitMethodInsn(INVOKESTATIC, hostClass, PREFIX_WRITE_METHOD, "(ILjava/lang/Object;Ljava/lang/Object;)V",
+                    isInterface);
             mv.visitInsn(RETURN);
         }
 
@@ -328,9 +312,8 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         throwIllegalArgumentWithClassIndex(mv, className);
     }
 
-    private static void generateImplChunkDispatcher(ClassWriter cw, String className,
-            String publicMethodName, String publicMethodDesc,
-            int chunkCount, boolean returnsVoid) {
+    private static void generateImplChunkDispatcher(ClassWriter cw, String className, String publicMethodName,
+            String publicMethodDesc, int chunkCount, boolean returnsVoid) {
         int accessFlags = ACC_PUBLIC;
         if (publicMethodDesc.startsWith("([")) {
             accessFlags |= ACC_VARARGS;
@@ -362,8 +345,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
                 slot += argTypes[a].getSize();
             }
 
-            mv.visitMethodInsn(INVOKEVIRTUAL, className,
-                    publicMethodName + "$" + i, publicMethodDesc, false);
+            mv.visitMethodInsn(INVOKEVIRTUAL, className, publicMethodName + "$" + i, publicMethodDesc, false);
 
             if (returnsVoid) {
                 mv.visitInsn(RETURN);
@@ -387,28 +369,13 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
         mv.visitTypeInsn(NEW, "java/lang/StringBuilder");
         mv.visitInsn(DUP);
         mv.visitLdcInsn("Unknown class index ");
-        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>",
-                "(Ljava/lang/String;)V", false);
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "(Ljava/lang/String;)V", false);
         mv.visitVarInsn(ALOAD, 0);
         mv.visitFieldInsn(GETFIELD, implClassName, "classIndex", "I");
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
-                "(I)Ljava/lang/StringBuilder;", false);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString",
-                "()Ljava/lang/String;", false);
-        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>",
-                "(Ljava/lang/String;)V", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "append", "(I)Ljava/lang/StringBuilder;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false);
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>", "(Ljava/lang/String;)V", false);
         mv.visitInsn(ATHROW);
     }
 
-    private static void pushIntConst(MethodVisitor mv, int value) {
-        if (value >= -1 && value <= 5) {
-            mv.visitInsn(ICONST_0 + value);
-        } else if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) {
-            mv.visitIntInsn(BIPUSH, value);
-        } else if (value >= Short.MIN_VALUE && value <= Short.MAX_VALUE) {
-            mv.visitIntInsn(SIPUSH, value);
-        } else {
-            mv.visitLdcInsn(value);
-        }
-    }
 }

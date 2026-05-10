@@ -2,7 +2,6 @@ package io.quarkus.hibernate.accessor.deployment;
 
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.STRING_SWITCH_CHUNK_SIZE;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.emitStringSwitch;
-import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.fqcnToName;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorGenerationUtil.pushIntConst;
 
 import java.util.ArrayList;
@@ -18,24 +17,7 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-class HibernateAccessorFactoryImplementation implements Opcodes {
-
-    static final String QUARKUS_HIBERNATE_ACCESSOR_FACTORY = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory";
-
-    static final String FIELD_READER = HibernateAccessorHostClassFunction.FIELD_READER;
-    static final String METHOD_READER = HibernateAccessorHostClassFunction.METHOD_READER;
-    static final String FIELD_WRITER = HibernateAccessorHostClassFunction.FIELD_WRITER;
-    static final String METHOD_WRITER = HibernateAccessorHostClassFunction.METHOD_WRITER;
-    static final String INSTANTIATOR_ACCESSOR = HibernateAccessorHostClassFunction.INSTANTIATOR_ACCESSOR;
-
-    private static final String FACTORY_INTERNAL = fqcnToName(QUARKUS_HIBERNATE_ACCESSOR_FACTORY);
-
-    private static final String READER_INTERFACE = "org/hibernate/accessor/HibernateAccessorValueReader";
-    private static final String WRITER_INTERFACE = "org/hibernate/accessor/HibernateAccessorValueWriter";
-    private static final String INSTANTIATOR_INTERFACE = "org/hibernate/accessor/HibernateAccessorInstantiator";
-    private static final String FACTORY_INTERFACE = "org/hibernate/accessor/HibernateAccessorFactory";
-
-    private static final String NAMING_UTIL = "io/quarkus/hibernate/accessor/runtime/spi/NamingUtil";
+class HibernateAccessorFactoryImplementation implements Opcodes, HibernateAccessorGeneratorConstants {
 
     private final Map<String, String> dispatchTargets = new LinkedHashMap<>();
     private final Set<String> interfaceTargets = new HashSet<>();
@@ -76,19 +58,19 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
     byte[] generate() {
         ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 
-        cw.visit(V17, ACC_PUBLIC | ACC_SUPER, FACTORY_INTERNAL, null,
-                "java/lang/Object", new String[] { FACTORY_INTERFACE });
+        cw.visit(V17, ACC_PUBLIC | ACC_SUPER, FACTORY_IMPLEMENTATION_INTERNAL, null,
+                "java/lang/Object", new String[] { FACTORY_INTERFACE_INTERNAL });
 
         generateConstructor(cw);
 
         generateValueAccessor(cw, "valueReader", "java/lang/reflect/Field", "getName",
-                FIELD_READER, READER_INTERFACE, fieldReaderClasses);
+                METHOD_NAME_FIELD_READER_ACCESSOR, READER_INTERFACE_INTERNAL, fieldReaderClasses);
         generateValueAccessor(cw, "valueReader", "java/lang/reflect/Method", "getName",
-                METHOD_READER, READER_INTERFACE, methodReaderClasses);
+                METHOD_NAME_METHOD_READER_ACCESSOR, READER_INTERFACE_INTERNAL, methodReaderClasses);
         generateValueAccessor(cw, "valueWriter", "java/lang/reflect/Field", "getName",
-                FIELD_WRITER, WRITER_INTERFACE, fieldWriterClasses);
+                METHOD_NAME_FIELD_WRITER_ACCESSOR, WRITER_INTERFACE_INTERNAL, fieldWriterClasses);
         generateValueAccessor(cw, "valueWriter", "java/lang/reflect/Method", "getName",
-                METHOD_WRITER, WRITER_INTERFACE, methodWriterClasses);
+                METHOD_NAME_METHOD_WRITER_ACCESSOR, WRITER_INTERFACE_INTERNAL, methodWriterClasses);
         generateInstantiatorMethod(cw);
 
         cw.visitEnd();
@@ -152,7 +134,7 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
         // After switch — no class match or null result
         mv.visitLabel(throwLabel);
         mv.visitFrame(F_FULL, 4,
-                new Object[] { FACTORY_INTERNAL, reflectType, "java/lang/String",
+                new Object[] { FACTORY_IMPLEMENTATION_INTERNAL, reflectType, "java/lang/String",
                         "java/lang/String" },
                 0, null);
         emitThrow(mv);
@@ -234,7 +216,7 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
                 mv.visitFrame(F_SAME, 0, null, 0, null);
                 mv.visitVarInsn(ALOAD, 2);
                 mv.visitVarInsn(ALOAD, 3);
-                mv.visitMethodInsn(INVOKESTATIC, FACTORY_INTERNAL, chunkBaseName + "$" + i,
+                mv.visitMethodInsn(INVOKESTATIC, FACTORY_IMPLEMENTATION_INTERNAL, chunkBaseName + "$" + i,
                         chunkMethodDesc, false);
                 // Check for null result
                 mv.visitInsn(DUP);
@@ -283,10 +265,10 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
     }
 
     private void generateInstantiatorMethod(ClassWriter cw) {
-        String hostMethodDesc = "(Ljava/lang/String;)L" + INSTANTIATOR_INTERFACE + ";";
+        String hostMethodDesc = "(Ljava/lang/String;)L" + INSTANTIATOR_INTERFACE_INTERNAL + ";";
 
         MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "instantiator",
-                "(Ljava/lang/reflect/Constructor;)L" + INSTANTIATOR_INTERFACE + ";",
+                "(Ljava/lang/reflect/Constructor;)L" + INSTANTIATOR_INTERFACE_INTERNAL + ";",
                 null, null);
         mv.visitCode();
 
@@ -300,7 +282,7 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
 
         // Extract constructor descriptor -> slot 3
         mv.visitVarInsn(ALOAD, 1);
-        mv.visitMethodInsn(INVOKESTATIC, NAMING_UTIL, "constructorDescriptor",
+        mv.visitMethodInsn(INVOKESTATIC, NAMING_UTIL_INTERNAL, "constructorDescriptor",
                 "(Ljava/lang/reflect/Constructor;)Ljava/lang/String;", false);
         mv.visitVarInsn(ASTORE, 3);
 
@@ -323,7 +305,7 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
                 boolean isIface = interfaceTargets.contains(target);
 
                 caseMv.visitVarInsn(ALOAD, 3);
-                caseMv.visitMethodInsn(INVOKESTATIC, target, INSTANTIATOR_ACCESSOR,
+                caseMv.visitMethodInsn(INVOKESTATIC, target, METHOD_NAME_INSTANTIATOR_ACCESSOR,
                         hostMethodDesc, isIface);
                 caseMv.visitInsn(DUP);
                 Label notNull = new Label();
@@ -339,14 +321,14 @@ class HibernateAccessorFactoryImplementation implements Opcodes {
             mv.visitJumpInsn(GOTO, throwLabel);
         } else {
             // Chunked dispatch for instantiator (same pattern as value accessor)
-            generateValueAccessorChunked(cw, mv, "instantiator_" + INSTANTIATOR_ACCESSOR,
-                    classNames, INSTANTIATOR_ACCESSOR, hostMethodDesc,
-                    INSTANTIATOR_INTERFACE, throwLabel);
+            generateValueAccessorChunked(cw, mv, "instantiator_" + METHOD_NAME_INSTANTIATOR_ACCESSOR,
+                    classNames, METHOD_NAME_INSTANTIATOR_ACCESSOR, hostMethodDesc,
+                    INSTANTIATOR_INTERFACE_INTERNAL, throwLabel);
         }
 
         mv.visitLabel(throwLabel);
         mv.visitFrame(F_FULL, 4,
-                new Object[] { FACTORY_INTERNAL, "java/lang/reflect/Constructor", "java/lang/String",
+                new Object[] { FACTORY_IMPLEMENTATION_INTERNAL, "java/lang/reflect/Constructor", "java/lang/String",
                         "java/lang/String" },
                 0, null);
         emitThrow(mv);
