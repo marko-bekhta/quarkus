@@ -2,6 +2,8 @@ package io.quarkus.hibernate.accessor.runtime;
 
 import java.lang.reflect.Constructor;
 
+import org.hibernate.accessor.HibernateAccessorFactory;
+
 /*
  * There can be some entities (yes, Hibernate Search Outboxpolling Agent/Event ones come to mind ;))
  * that are contributed for accessor processing, but they would be living in the base classloader
@@ -10,9 +12,18 @@ import java.lang.reflect.Constructor;
  */
 public class AccessorImplFactory {
 
+    private static volatile HibernateAccessorFactory factory;
     private static volatile Constructor<?> readerCtor;
     private static volatile Constructor<?> writerCtor;
     private static volatile Constructor<?> instantiatorCtor;
+
+    public static void setFactory(HibernateAccessorFactory factory) {
+        AccessorImplFactory.factory = factory;
+    }
+
+    public static HibernateAccessorFactory getFactory() {
+        return factory;
+    }
 
     public static void init(String readerClass, String writerClass, String instantiatorClass) {
         try {

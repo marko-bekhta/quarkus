@@ -19,6 +19,7 @@ public class HibernateAccessorRecorder {
             HibernateAccessorFactory factory = (HibernateAccessorFactory) factoryClass
                     .getDeclaredConstructor()
                     .newInstance();
+            AccessorImplFactory.setFactory(factory);
             return new RuntimeValue<>(factory);
         } catch (Exception e) {
             throw new RuntimeException("Failed to instantiate generated accessor factory: " + generatedFactoryClassName, e);
@@ -32,6 +33,7 @@ public class HibernateAccessorRecorder {
             HibernateAccessorFactory factory = (HibernateAccessorFactory) factoryClass
                     .getDeclaredConstructor(HibernateAccessorFactory.class)
                     .newInstance(HibernateAccessorFactory.reflection());
+            AccessorImplFactory.setFactory(factory);
             return new RuntimeValue<>(factory);
         } catch (Exception e) {
             throw new RuntimeException("Failed to instantiate generated accessor factory with fallback: "
@@ -40,7 +42,9 @@ public class HibernateAccessorRecorder {
     }
 
     public RuntimeValue<HibernateAccessorFactory> createReflectionFactory() {
-        return new RuntimeValue<>(HibernateAccessorFactory.reflection());
+        HibernateAccessorFactory factory = HibernateAccessorFactory.reflection();
+        AccessorImplFactory.setFactory(factory);
+        return new RuntimeValue<>(factory);
     }
 
 }
