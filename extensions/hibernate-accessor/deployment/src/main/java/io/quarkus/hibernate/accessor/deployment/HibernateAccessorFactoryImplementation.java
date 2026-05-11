@@ -61,11 +61,16 @@ class HibernateAccessorFactoryImplementation implements Opcodes, HibernateAccess
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, FACTORY_IMPLEMENTATION_INTERNAL, null,
                 "java/lang/Object", new String[] { FACTORY_INTERFACE_INTERNAL });
 
+        // Static singleton reference for readResolve() — preserves singleton across deserialization.
+        cw.visitField(ACC_PRIVATE | ACC_STATIC | ACC_VOLATILE, "INSTANCE", "L" + FACTORY_INTERFACE_INTERNAL + ";", null, null).visitEnd();
+
         if (withFallback) {
             cw.visitField(ACC_PRIVATE | ACC_FINAL, "fallback", "L" + FACTORY_INTERFACE_INTERNAL + ";", null, null).visitEnd();
         }
 
         generateConstructor(cw, withFallback);
+
+        generateReadResolve(cw);
 
         generateValueAccessor(cw, withFallback, "valueReader", "java/lang/reflect/Field", "getName",
                 METHOD_NAME_FIELD_READER_ACCESSOR, READER_INTERFACE_INTERNAL, fieldReaderClasses);
@@ -99,10 +104,24 @@ class HibernateAccessorFactoryImplementation implements Opcodes, HibernateAccess
             mv.visitCode();
             mv.visitVarInsn(ALOAD, 0);
             mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+            // Store the singleton reference for readResolve()
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitFieldInsn(PUTSTATIC, FACTORY_IMPLEMENTATION_INTERNAL, "INSTANCE", "L" + FACTORY_INTERFACE_INTERNAL + ";");
             mv.visitInsn(RETURN);
             mv.visitMaxs(0, 0);
             mv.visitEnd();
         }
+    }
+
+    // readResolve() returns the static INSTANCE so deserialization preserves the singleton.
+    private static void generateReadResolve(ClassWriter cw) {
+        MethodVisitor mv = cw.visitMethod(ACC_PRIVATE, "readResolve",
+                "()Ljava/lang/Object;", null, null);
+        mv.visitCode();
+        mv.visitFieldInsn(GETSTATIC, FACTORY_INTERFACE_INTERNAL, "INSTANCE", "L" + FACTORY_INTERFACE_INTERNAL + ";");
+        mv.visitInsn(ARETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
     }
 
     private void generateValueAccessor(ClassWriter cw, boolean withFallback, String factoryMethodName,
