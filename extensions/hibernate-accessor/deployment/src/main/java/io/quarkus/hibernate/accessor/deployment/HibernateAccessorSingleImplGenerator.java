@@ -8,6 +8,7 @@ import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClas
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorHostClassFunction.WRITE_METHOD;
 import static io.quarkus.hibernate.accessor.deployment.HibernateAccessorProcessor.*;
 
+import java.io.Serializable;
 import java.util.List;
 
 import org.hibernate.accessor.HibernateAccessorInstantiator;
@@ -24,9 +25,11 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
     static final String WRITER_IMPL = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorValueWriterImpl";
     static final String INSTANTIATOR_IMPL = "io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorInstantiatorImpl";
 
-    private static final String READER_INTERFACE = fqcnToName(HibernateAccessorValueReader.class.getName());
-    private static final String WRITER_INTERFACE = fqcnToName(HibernateAccessorValueWriter.class.getName());
-    private static final String INSTANTIATOR_INTERFACE = fqcnToName(HibernateAccessorInstantiator.class.getName());
+    static final String READER_INTERFACE = fqcnToName(HibernateAccessorValueReader.class.getName());
+    static final String WRITER_INTERFACE = fqcnToName(HibernateAccessorValueWriter.class.getName());
+    static final String INSTANTIATOR_INTERFACE = fqcnToName(HibernateAccessorInstantiator.class.getName());
+
+    static final String SERIALIZABLE_INTERFACE = fqcnToName( Serializable.class.getName());
 
     byte[] generateReaderImpl(List<HostData> hostClasses) {
         String className = fqcnToName(READER_IMPL);
@@ -34,7 +37,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
 
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, className,
                 "Ljava/lang/Object;L" + READER_INTERFACE + "<Ljava/lang/Object;>;",
-                "java/lang/Object", new String[] { READER_INTERFACE });
+                "java/lang/Object", new String[] { READER_INTERFACE, SERIALIZABLE_INTERFACE });
 
         generateIndexFields(cw);
         generateIndexConstructor(cw, className);
@@ -61,7 +64,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
 
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, className,
                 null,
-                "java/lang/Object", new String[] { WRITER_INTERFACE });
+                "java/lang/Object", new String[] { WRITER_INTERFACE, SERIALIZABLE_INTERFACE });
 
         generateIndexFields(cw);
         generateIndexConstructor(cw, className);
@@ -87,7 +90,7 @@ class HibernateAccessorSingleImplGenerator implements Opcodes {
 
         cw.visit(V17, ACC_PUBLIC | ACC_SUPER, className,
                 "Ljava/lang/Object;L" + INSTANTIATOR_INTERFACE + "<Ljava/lang/Object;>;",
-                "java/lang/Object", new String[] { INSTANTIATOR_INTERFACE });
+                "java/lang/Object", new String[] { INSTANTIATOR_INTERFACE, SERIALIZABLE_INTERFACE });
 
         generateIndexFields(cw);
         generateIndexConstructor(cw, className);
