@@ -17,8 +17,8 @@ public class HibernateAccessorRecorder {
             Class<?> factoryClass = Class.forName(generatedFactoryClassName, true,
                     Thread.currentThread().getContextClassLoader());
             HibernateAccessorFactory factory = (HibernateAccessorFactory) factoryClass
-                    .getDeclaredConstructor()
-                    .newInstance();
+                    .getMethod("create")
+                    .invoke(null);
             AccessorImplFactory.setFactory(factory);
             return new RuntimeValue<>(factory);
         } catch (Exception e) {
@@ -31,8 +31,8 @@ public class HibernateAccessorRecorder {
             Class<?> factoryClass = Class.forName(generatedFactoryClassName, true,
                     Thread.currentThread().getContextClassLoader());
             HibernateAccessorFactory factory = (HibernateAccessorFactory) factoryClass
-                    .getDeclaredConstructor(HibernateAccessorFactory.class)
-                    .newInstance(HibernateAccessorFactory.reflection());
+                    .getMethod("create", HibernateAccessorFactory.class)
+                    .invoke(null, HibernateAccessorFactory.reflection());
             AccessorImplFactory.setFactory(factory);
             return new RuntimeValue<>(factory);
         } catch (Exception e) {

@@ -29,6 +29,6 @@ abstract class HibernateAccessorBaseTest {
     protected HibernateAccessorFactory loadGeneratedFactory() throws Exception {
         Class<?> factoryClass = Thread.currentThread().getContextClassLoader()
                 .loadClass("io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory");
-        return (HibernateAccessorFactory) factoryClass.getDeclaredConstructor().newInstance();
+        return (HibernateAccessorFactory) factoryClass.getMethod("create").invoke(null);
     }
 }

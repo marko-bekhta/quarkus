@@ -18,10 +18,10 @@ public class HibernateAccessorFallbackStrategyTest {
             .overrideConfigKey("quarkus.hibernate-accessor.strategy", "reflection-free-with-fallback");
 
     @Test
-    void generatedFactoryHasFallbackConstructor() throws Exception {
+    void generatedFactoryHasCreateMethodWithFallback() throws Exception {
         Class<?> factoryClass = Thread.currentThread().getContextClassLoader()
                 .loadClass("io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory");
-        assertThat(factoryClass.getDeclaredConstructor(HibernateAccessorFactory.class)).isNotNull();
+        assertThat(factoryClass.getMethod("create", HibernateAccessorFactory.class)).isNotNull();
     }
 
     @Test
@@ -54,7 +54,7 @@ public class HibernateAccessorFallbackStrategyTest {
         Class<?> factoryClass = Thread.currentThread().getContextClassLoader()
                 .loadClass("io.quarkus.hibernate.accessor.runtime.QuarkusHibernateAccessorFactory");
         return (HibernateAccessorFactory) factoryClass
-                .getDeclaredConstructor(HibernateAccessorFactory.class)
-                .newInstance(HibernateAccessorFactory.reflection());
+                .getMethod("create", HibernateAccessorFactory.class)
+                .invoke(null, HibernateAccessorFactory.reflection());
     }
 }

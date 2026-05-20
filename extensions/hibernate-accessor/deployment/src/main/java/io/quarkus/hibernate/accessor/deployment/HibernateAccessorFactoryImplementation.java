@@ -16,6 +16,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
 class HibernateAccessorFactoryImplementation implements Opcodes, HibernateAccessorGeneratorConstants {
 
@@ -62,14 +63,15 @@ class HibernateAccessorFactoryImplementation implements Opcodes, HibernateAccess
                 "java/lang/Object", new String[] { FACTORY_INTERFACE_INTERNAL });
 
         // Static singleton reference for readResolve() — preserves singleton across deserialization.
-        cw.visitField(ACC_PRIVATE | ACC_STATIC | ACC_VOLATILE, "INSTANCE", "L" + FACTORY_INTERFACE_INTERNAL + ";", null, null).visitEnd();
+        cw.visitField(ACC_PRIVATE | ACC_STATIC | ACC_VOLATILE, "INSTANCE", "L" + FACTORY_INTERFACE_INTERNAL + ";", null, null)
+                .visitEnd();
 
         if (withFallback) {
             cw.visitField(ACC_PRIVATE | ACC_FINAL, "fallback", "L" + FACTORY_INTERFACE_INTERNAL + ";", null, null).visitEnd();
         }
 
         generateConstructor(cw, withFallback);
-
+        generateCreateMethod(cw, withFallback);
         generateReadResolve(cw);
 
         generateValueAccessor(cw, withFallback, "valueReader", "java/lang/reflect/Field", "getName",
@@ -87,38 +89,124 @@ class HibernateAccessorFactoryImplementation implements Opcodes, HibernateAccess
     }
 
     private void generateConstructor(ClassWriter cw, boolean withFallback) {
+        String desc = withFallback
+                ? "(L" + FACTORY_INTERFACE_INTERNAL + ";)V"
+                : "()V";
+        MethodVisitor mv = cw.visitMethod(ACC_PRIVATE, "<init>", desc, null, null);
+        mv.visitCode();
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
         if (withFallback) {
-            String desc = "(L" + FACTORY_INTERFACE_INTERNAL + ";)V";
-            MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", desc, null, null);
-            mv.visitCode();
-            mv.visitVarInsn(ALOAD, 0);
-            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
             mv.visitVarInsn(ALOAD, 0);
             mv.visitVarInsn(ALOAD, 1);
-            mv.visitFieldInsn(PUTFIELD, FACTORY_IMPLEMENTATION_INTERNAL, "fallback", "L" + FACTORY_INTERFACE_INTERNAL + ";");
-            mv.visitInsn(RETURN);
-            mv.visitMaxs(0, 0);
-            mv.visitEnd();
-        } else {
-            MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
-            mv.visitCode();
-            mv.visitVarInsn(ALOAD, 0);
-            mv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
-            // Store the singleton reference for readResolve()
-            mv.visitVarInsn(ALOAD, 0);
-            mv.visitFieldInsn(PUTSTATIC, FACTORY_IMPLEMENTATION_INTERNAL, "INSTANCE", "L" + FACTORY_INTERFACE_INTERNAL + ";");
-            mv.visitInsn(RETURN);
-            mv.visitMaxs(0, 0);
-            mv.visitEnd();
+            mv.visitFieldInsn(PUTFIELD, FACTORY_IMPLEMENTATION_INTERNAL, "fallback",
+                    "L" + FACTORY_INTERFACE_INTERNAL + ";");
         }
+        mv.visitInsn(RETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
     }
 
-    // readResolve() returns the static INSTANCE so deserialization preserves the singleton.
+    private void generateCreateMethod(ClassWriter cw, boolean withFallback) {
+        String factoryDesc = "L" + FACTORY_INTERFACE_INTERNAL + ";";
+        String implDesc = "L" + FACTORY_IMPLEMENTATION_INTERNAL + ";";
+        String createDesc = withFallback
+                ? "(" + factoryDesc + ")" + factoryDesc
+                : "()" + factoryDesc;
+        String ctorDesc = withFallback
+                ? "(" + factoryDesc + ")V"
+                : "()V";
+
+        MethodVisitor mv = cw.visitMethod(ACC_PUBLIC | ACC_STATIC, "create", createDesc, null, null);
+        mv.visitCode();
+
+        // First null check (no lock)
+        mv.visitFieldInsn(GETSTATIC, FACTORY_IMPLEMENTATION_INTERNAL, "INSTANCE", factoryDesc);
+        Label notNull1 = new Label();
+        mv.visitJumpInsn(IFNONNULL, notNull1);
+
+        // synchronized (QuarkusHibernateAccessorFactory.class)
+        mv.visitLdcInsn(Type.getObjectType(FACTORY_IMPLEMENTATION_INTERNAL));
+        mv.visitInsn(DUP);
+        int monitorSlot = withFallback ? 1 : 0;
+        mv.visitVarInsn(ASTORE, monitorSlot);
+        mv.visitInsn(MONITORENTER);
+
+        Label tryStart = new Label();
+        Label tryEnd = new Label();
+        Label catchLabel = new Label();
+        mv.visitTryCatchBlock(tryStart, tryEnd, catchLabel, null);
+
+        mv.visitLabel(tryStart);
+
+        // Second null check (under lock)
+        mv.visitFieldInsn(GETSTATIC, FACTORY_IMPLEMENTATION_INTERNAL, "INSTANCE", factoryDesc);
+        Label notNull2 = new Label();
+        mv.visitJumpInsn(IFNONNULL, notNull2);
+
+        // INSTANCE = new QuarkusHibernateAccessorFactory(fallback)
+        mv.visitTypeInsn(NEW, FACTORY_IMPLEMENTATION_INTERNAL);
+        mv.visitInsn(DUP);
+        if (withFallback) {
+            mv.visitVarInsn(ALOAD, 0);
+        }
+        mv.visitMethodInsn(INVOKESPECIAL, FACTORY_IMPLEMENTATION_INTERNAL, "<init>", ctorDesc, false);
+        mv.visitFieldInsn(PUTSTATIC, FACTORY_IMPLEMENTATION_INTERNAL, "INSTANCE", factoryDesc);
+
+        mv.visitLabel(notNull2);
+        mv.visitFrame(F_FULL,
+                withFallback ? 2 : 1,
+                withFallback
+                        ? new Object[] { FACTORY_INTERFACE_INTERNAL, "java/lang/Object" }
+                        : new Object[] { "java/lang/Object" },
+                0, null);
+        mv.visitVarInsn(ALOAD, monitorSlot);
+        mv.visitInsn(MONITOREXIT);
+
+        mv.visitLabel(tryEnd);
+        Label afterSync = new Label();
+        mv.visitJumpInsn(GOTO, afterSync);
+
+        // catch-all: monitorexit + rethrow
+        mv.visitLabel(catchLabel);
+        mv.visitFrame(F_FULL,
+                withFallback ? 2 : 1,
+                withFallback
+                        ? new Object[] { FACTORY_INTERFACE_INTERNAL, "java/lang/Object" }
+                        : new Object[] { "java/lang/Object" },
+                1, new Object[] { "java/lang/Throwable" });
+        mv.visitVarInsn(ALOAD, monitorSlot);
+        mv.visitInsn(MONITOREXIT);
+        mv.visitInsn(ATHROW);
+
+        mv.visitLabel(afterSync);
+        mv.visitFrame(F_FULL,
+                withFallback ? 2 : 1,
+                withFallback
+                        ? new Object[] { FACTORY_INTERFACE_INTERNAL, "java/lang/Object" }
+                        : new Object[] { "java/lang/Object" },
+                0, null);
+
+        mv.visitLabel(notNull1);
+        mv.visitFrame(F_FULL,
+                withFallback ? 1 : 0,
+                withFallback
+                        ? new Object[] { FACTORY_INTERFACE_INTERNAL }
+                        : new Object[] {},
+                0, null);
+        mv.visitFieldInsn(GETSTATIC, FACTORY_IMPLEMENTATION_INTERNAL, "INSTANCE", factoryDesc);
+        mv.visitInsn(ARETURN);
+
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
     private static void generateReadResolve(ClassWriter cw) {
         MethodVisitor mv = cw.visitMethod(ACC_PRIVATE, "readResolve",
                 "()Ljava/lang/Object;", null, null);
         mv.visitCode();
-        mv.visitFieldInsn(GETSTATIC, FACTORY_INTERFACE_INTERNAL, "INSTANCE", "L" + FACTORY_INTERFACE_INTERNAL + ";");
+        mv.visitFieldInsn(GETSTATIC, FACTORY_IMPLEMENTATION_INTERNAL, "INSTANCE",
+                "L" + FACTORY_INTERFACE_INTERNAL + ";");
         mv.visitInsn(ARETURN);
         mv.visitMaxs(0, 0);
         mv.visitEnd();
