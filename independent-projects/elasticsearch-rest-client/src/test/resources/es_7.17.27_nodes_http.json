@@ -1,0 +1,47 @@
+{
+    "_nodes": {
+        "total": 1,
+        "successful": 1,
+        "failed": 0
+    },
+    "cluster_name": "docker-cluster",
+    "nodes": {
+        "kjKwIX5aT5eyL8cDhb5eyg": {
+            "name": "11fdfa48ada3",
+            "transport_address": "10.88.0.6:9300",
+            "host": "10.88.0.6",
+            "ip": "10.88.0.6",
+            "version": "7.17.27",
+            "build_flavor": "default",
+            "build_type": "docker",
+            "build_hash": "0f88dde84795b30ca0d2c0c4796643ec5938aeb5",
+            "roles": [
+                "data",
+                "data_cold",
+                "data_content",
+                "data_frozen",
+                "data_hot",
+                "data_warm",
+                "ingest",
+                "master",
+                "ml",
+                "remote_cluster_client",
+                "transform"
+            ],
+            "attributes": {
+                "ml.machine_memory": "134783303680",
+                "xpack.installed": "true",
+                "transform.node": "true",
+                "ml.max_open_jobs": "512",
+                "ml.max_jvm_size": "536870912"
+            },
+            "http": {
+                "bound_address": [
+                    "[::]:9200"
+                ],
+                "publish_address": "10.88.0.6:9200",
+                "max_content_length_in_bytes": 104857600
+            }
+        }
+    }
+}

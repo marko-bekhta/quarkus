@@ -1,0 +1,56 @@
+{
+    "_nodes": {
+        "total": 1,
+        "successful": 1,
+        "failed": 0
+    },
+    "cluster_name": "docker-cluster",
+    "nodes": {
+        "uv9mdRoCRTSzx8jBhNitSQ": {
+            "name": "5e7378e33076",
+            "transport_address": "10.88.0.7:9300",
+            "host": "10.88.0.7",
+            "ip": "10.88.0.7",
+            "version": "9.0.0",
+            "transport_version": 9000009,
+            "index_version": 9009000,
+            "component_versions": {
+                "api_key_version": 8150099,
+                "ml_config_version": 12000099,
+                "transform_config_version": 10000099
+            },
+            "build_flavor": "default",
+            "build_type": "docker",
+            "build_hash": "112859b85d50de2a7e63f73c8fc70b99eea24291",
+            "roles": [
+                "data",
+                "data_cold",
+                "data_content",
+                "data_frozen",
+                "data_hot",
+                "data_warm",
+                "ingest",
+                "master",
+                "ml",
+                "remote_cluster_client",
+                "transform"
+            ],
+            "attributes": {
+                "ml.max_jvm_size": "536870912",
+                "ml.config_version": "12.0.0",
+                "xpack.installed": "true",
+                "transform.config_version": "10.0.0",
+                "ml.machine_memory": "134783303680",
+                "ml.allocated_processors": "22",
+                "ml.allocated_processors_double": "22.0"
+            },
+            "http": {
+                "bound_address": [
+                    "[::]:9200"
+                ],
+                "publish_address": "10.88.0.7:9200",
+                "max_content_length_in_bytes": 104857600
+            }
+        }
+    }
+}
