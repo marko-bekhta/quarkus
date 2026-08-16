@@ -5524,6 +5524,11 @@
                 <version>${project.version}</version>
             </dependency>
             <dependency>
+                <groupId>io.quarkus.elasticsearch.restclient.vertx</groupId>
+                <artifactId>elasticsearch-rest-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.wildfly.common</groupId>
                 <artifactId>wildfly-common</artifactId>
                 <version>${wildfly-common.version}</version>
