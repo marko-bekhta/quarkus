@@ -1,9 +1,10 @@
 package io.quarkus.elasticsearch.restclient.vertx;
 
+import java.util.Map;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.HttpWaitStrategy;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -12,14 +13,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class Es900ContractTest extends AbstractContractTest {
 
     @Container
-    static final GenericContainer<?> ELASTICSEARCH = new GenericContainer<>(
-            "docker.elastic.co/elasticsearch/elasticsearch:9.0.0")
-            .withEnv("discovery.type", "single-node")
-            .withEnv("xpack.security.enabled", "false")
-            .withEnv("ES_JAVA_OPTS", "-Xms512m -Xmx512m")
-            .withExposedPorts(9200)
-            .waitingFor(new HttpWaitStrategy().forPort(9200).forStatusCode(200))
-            .withReuse(true);
+    static final GenericContainer<?> ELASTICSEARCH = container(
+            "docker.elastic.co/elasticsearch/elasticsearch:9.0.0",
+            Map.of("xpack.security.enabled", "false", "ES_JAVA_OPTS", "-Xms512m -Xmx512m"));
 
     @BeforeAll
     void init() {

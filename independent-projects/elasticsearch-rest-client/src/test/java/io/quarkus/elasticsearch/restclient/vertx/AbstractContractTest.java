@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.HttpWaitStrategy;
 
 import io.quarkus.elasticsearch.restclient.vertx.discovery.ElasticsearchNodeDiscovery;
 import io.quarkus.elasticsearch.restclient.vertx.discovery.NodeDiscovery;
@@ -26,6 +28,17 @@ import io.vertx.core.buffer.Buffer;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 abstract class AbstractContractTest {
+
+    static GenericContainer<?> container(String image, Map<String, String> env) {
+        return new GenericContainer<>(image)
+                .withEnv("discovery.type", "single-node")
+                // A full host disk can otherwise prevent shard allocation in these single-node test clusters.
+                .withEnv("cluster.routing.allocation.disk.threshold_enabled", "false")
+                .withEnv(env)
+                .withExposedPorts(9200)
+                .waitingFor(new HttpWaitStrategy().forPort(9200).forStatusCode(200))
+                .withReuse(true);
+    }
 
     Vertx vertx;
     VertxElasticsearchClient client;

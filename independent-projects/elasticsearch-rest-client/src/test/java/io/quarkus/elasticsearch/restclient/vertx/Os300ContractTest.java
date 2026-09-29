@@ -1,9 +1,10 @@
 package io.quarkus.elasticsearch.restclient.vertx;
 
+import java.util.Map;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.HttpWaitStrategy;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -12,14 +13,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class Os300ContractTest extends AbstractContractTest {
 
     @Container
-    static final GenericContainer<?> OPENSEARCH = new GenericContainer<>(
-            "opensearchproject/opensearch:3.0.0")
-            .withEnv("discovery.type", "single-node")
-            .withEnv("DISABLE_SECURITY_PLUGIN", "true")
-            .withEnv("OPENSEARCH_JAVA_OPTS", "-Xms512m -Xmx512m")
-            .withExposedPorts(9200)
-            .waitingFor(new HttpWaitStrategy().forPort(9200).forStatusCode(200))
-            .withReuse(true);
+    static final GenericContainer<?> OPENSEARCH = container(
+            "opensearchproject/opensearch:3.0.0",
+            Map.of("DISABLE_SECURITY_PLUGIN", "true", "OPENSEARCH_JAVA_OPTS", "-Xms512m -Xmx512m"));
 
     @BeforeAll
     void init() {
