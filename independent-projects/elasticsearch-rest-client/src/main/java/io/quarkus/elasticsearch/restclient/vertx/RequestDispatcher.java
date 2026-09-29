@@ -10,6 +10,12 @@ import io.vertx.core.Future;
  */
 public interface RequestDispatcher {
 
+    /**
+     * Called when the client has finished initializing its dispatcher.
+     */
+    default void onClientCreated() {
+    }
+
     CancellableFuture<Response> dispatch(Request request);
 
     /**

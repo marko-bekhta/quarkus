@@ -7,7 +7,9 @@ import static org.awaitility.Awaitility.await;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -18,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import io.vertx.core.Promise;
+import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServer;
@@ -35,6 +37,24 @@ class VertxElasticsearchClientTest {
     @AfterAll
     static void teardown() throws Exception {
         vertx.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    void discoveryStartsAfterClientConstruction(boolean resolver) throws Exception {
+        CountDownLatch discovered = new CountDownLatch(1);
+        VertxElasticsearchClient client = VertxElasticsearchClient.builder(vertx, URI.create("http://localhost:9200"))
+                .setRequestDispatcher(resolver ? RequestDispatcher.vertxResolver() : RequestDispatcher.roundRobin())
+                .nodeDiscovery(config -> config.nodeDiscoveryFactory(ignored -> () -> {
+                    discovered.countDown();
+                    return Future.succeededFuture(List.of());
+                }))
+                .build();
+        try {
+            assertThat(discovered.await(5, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            client.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        }
     }
 
     @ParameterizedTest
@@ -63,23 +83,14 @@ class VertxElasticsearchClientTest {
         });
         String master = nodeJson(rejected.actualPort(), "master");
         discoveryResponse.set("{\"nodes\":{\"master\":" + master + "}}");
-        Promise<VertxElasticsearchClient> built = Promise.promise();
-        // Construct on the event loop so scheduled discovery starts after construction.
-        vertx.runOnContext(ignored -> {
-            try {
-                RequestDispatcherFactory factory = resolver ? RequestDispatcher.vertxResolver()
-                        : RequestDispatcher.roundRobin();
-                built.complete(VertxElasticsearchClient
-                        .builder(vertx, URI.create("http://127.0.0.1:" + rejected.actualPort()))
-                        .setRequestDispatcher(factory.nodeSelector(NodeSelector.skipDedicatedMasters())
-                                .pathPrefix("/prefix").defaultHeaders(Map.of("Authorization", "Bearer discovery-test")))
-                        .nodeDiscovery(config -> config.discoveryIntervalMillis(50))
-                        .build());
-            } catch (Throwable failure) {
-                built.fail(failure);
-            }
-        });
-        VertxElasticsearchClient client = built.future().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        RequestDispatcherFactory factory = resolver ? RequestDispatcher.vertxResolver()
+                : RequestDispatcher.roundRobin();
+        VertxElasticsearchClient client = VertxElasticsearchClient
+                .builder(vertx, URI.create("http://127.0.0.1:" + rejected.actualPort()))
+                .setRequestDispatcher(factory.nodeSelector(NodeSelector.skipDedicatedMasters())
+                        .pathPrefix("/prefix").defaultHeaders(Map.of("Authorization", "Bearer discovery-test")))
+                .nodeDiscovery(config -> config.discoveryIntervalMillis(50))
+                .build();
         try {
             await().atMost(Duration.ofSeconds(5))
                     .untilAsserted(() -> assertThatThrownBy(() -> client.performRequest(new Request("GET", "/")))

@@ -31,6 +31,7 @@ public class NodeDiscoveryScheduler {
     private final Consumer<List<NodeImpl>> nodeUpdater;
     private final long discoveryIntervalMillis;
     private final long discoveryAfterFailureDelayMillis;
+    private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private volatile boolean closed = false;
 
@@ -46,7 +47,16 @@ public class NodeDiscoveryScheduler {
         this.nodeUpdater = nodeUpdater;
         this.discoveryIntervalMillis = discoveryIntervalMillis;
         this.discoveryAfterFailureDelayMillis = discoveryAfterFailureDelayMillis;
-        vertx.runOnContext(v -> scheduleDiscovery(0, discoveryIntervalMillis));
+    }
+
+    /**
+     * Starts discovery after the client and dispatcher have been fully constructed.
+     * Repeated calls have no effect, and a closed scheduler cannot be restarted.
+     */
+    public void start() {
+        if (started.compareAndSet(false, true)) {
+            vertx.runOnContext(v -> scheduleDiscovery(0, discoveryIntervalMillis));
+        }
     }
 
     public void discoverOnFailure() {
@@ -95,7 +105,7 @@ public class NodeDiscoveryScheduler {
             if (closed) {
                 return;
             }
-            nodeDiscovery.discover()
+            Future.<List<Node>> succeededFuture().compose(ignored -> nodeDiscovery.discover())
                     .onSuccess(rawNodes -> {
                         if (rawNodes != null && !rawNodes.isEmpty()) {
                             List<NodeImpl> implNodes = new ArrayList<>(rawNodes.size());

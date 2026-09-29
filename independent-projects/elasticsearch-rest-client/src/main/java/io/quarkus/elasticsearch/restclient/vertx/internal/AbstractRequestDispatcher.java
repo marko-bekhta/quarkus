@@ -169,6 +169,13 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
     }
 
     @Override
+    public void onClientCreated() {
+        if (nodeDiscoveryScheduler != null) {
+            nodeDiscoveryScheduler.start();
+        }
+    }
+
+    @Override
     public abstract CancellableFuture<Response> dispatch(Request request);
 
     abstract CancellableFuture<Response> dispatchForDiscovery(Request request);

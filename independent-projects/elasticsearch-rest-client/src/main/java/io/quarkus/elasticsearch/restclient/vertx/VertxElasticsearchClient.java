@@ -34,6 +34,7 @@ public class VertxElasticsearchClient {
         var context = new RequestDispatcherContext(this, initialNodes, nodeDiscoveryConfigurer, scheme, vertx,
                 httpClientOptions, poolOptions);
         this.dispatcher = factory.create(context);
+        this.dispatcher.onClientCreated();
     }
 
     public static VertxElasticsearchClientBuilder builder(Vertx vertx, URI... hosts) {

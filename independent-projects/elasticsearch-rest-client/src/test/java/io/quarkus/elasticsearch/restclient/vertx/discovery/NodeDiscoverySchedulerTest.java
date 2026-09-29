@@ -46,9 +46,46 @@ class NodeDiscoverySchedulerTest {
 
         NodeDiscoveryScheduler scheduler = new NodeDiscoveryScheduler(mockDiscovery, vertx, received::addAll,
                 60_000, 1_000);
+        scheduler.start();
         try {
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
             assertThat(discoveryCount.get()).isGreaterThanOrEqualTo(1);
+        } finally {
+            scheduler.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void constructionDoesNotStartDiscovery() throws Exception {
+        CountDownLatch discovered = new CountDownLatch(1);
+        NodeDiscoveryScheduler scheduler = new NodeDiscoveryScheduler(() -> {
+            discovered.countDown();
+            return Future.succeededFuture(List.of());
+        }, vertx, nodes -> {
+        }, 60_000, 1_000);
+        try {
+            assertThat(discovered.await(200, TimeUnit.MILLISECONDS)).isFalse();
+            scheduler.start();
+            assertThat(discovered.await(5, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            scheduler.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void synchronousDiscoveryExceptionDoesNotStopScheduler() throws Exception {
+        AtomicInteger discoveryCount = new AtomicInteger();
+        CountDownLatch updated = new CountDownLatch(1);
+        NodeDiscoveryScheduler scheduler = new NodeDiscoveryScheduler(() -> {
+            if (discoveryCount.incrementAndGet() == 1) {
+                throw new IllegalStateException("Synchronous discovery failure");
+            }
+            return Future.succeededFuture(List.of(new NodeImpl(URI.create("http://discovered:9200"))));
+        }, vertx, nodes -> updated.countDown(), 50, 1_000);
+        try {
+            scheduler.start();
+            assertThat(updated.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(discoveryCount.get()).isGreaterThanOrEqualTo(2);
         } finally {
             scheduler.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
         }
@@ -67,6 +104,7 @@ class NodeDiscoverySchedulerTest {
 
         NodeDiscoveryScheduler scheduler = new NodeDiscoveryScheduler(mockDiscovery, vertx, nodes -> {
         }, 100, 100);
+        scheduler.start();
         try {
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
             assertThat(discoveryCount.get()).isGreaterThanOrEqualTo(3);
@@ -91,6 +129,7 @@ class NodeDiscoverySchedulerTest {
 
         NodeDiscoveryScheduler scheduler = new NodeDiscoveryScheduler(mockDiscovery, vertx, nodes -> {
         }, 100, 100);
+        scheduler.start();
         try {
             assertThat(secondDiscovery.await(5, TimeUnit.SECONDS)).isTrue();
             assertThat(discoveryCount.get()).isGreaterThanOrEqualTo(2);
@@ -111,6 +150,7 @@ class NodeDiscoverySchedulerTest {
 
         NodeDiscoveryScheduler scheduler = new NodeDiscoveryScheduler(mockDiscovery, vertx,
                 nodes -> updaterCalls.incrementAndGet(), 60_000, 1_000);
+        scheduler.start();
         try {
             assertThat(discovered.await(5, TimeUnit.SECONDS)).isTrue();
             Thread.sleep(50);
@@ -132,6 +172,7 @@ class NodeDiscoverySchedulerTest {
         NodeDiscoveryScheduler scheduler = new NodeDiscoveryScheduler(mockDiscovery, vertx, nodes -> {
         }, 100, 100);
 
+        scheduler.start();
         Thread.sleep(200);
         scheduler.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
 
