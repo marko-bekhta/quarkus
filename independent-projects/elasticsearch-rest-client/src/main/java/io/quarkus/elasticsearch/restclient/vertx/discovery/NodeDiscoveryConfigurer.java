@@ -5,6 +5,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import io.quarkus.elasticsearch.restclient.vertx.CancellableFuture;
+import io.quarkus.elasticsearch.restclient.vertx.Request;
+import io.quarkus.elasticsearch.restclient.vertx.Response;
 import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient;
 import io.quarkus.elasticsearch.restclient.vertx.internal.HttpConstants;
 import io.quarkus.elasticsearch.restclient.vertx.internal.NodeImpl;
@@ -72,11 +75,22 @@ public class NodeDiscoveryConfigurer {
 
     public NodeDiscoveryScheduler createScheduler(VertxElasticsearchClient client, Vertx vertx,
             Consumer<List<NodeImpl>> nodeUpdater, HttpConstants.Scheme scheme) {
+        return createScheduler(client, vertx, nodeUpdater, scheme, client::performRequestAsync);
+    }
+
+    /**
+     * Creates the scheduler with the request sender provided by the owning dispatcher.
+     * The built-in discovery uses it to reach every known node even when the application
+     * selector currently accepts none of them.
+     */
+    public NodeDiscoveryScheduler createScheduler(VertxElasticsearchClient client, Vertx vertx,
+            Consumer<List<NodeImpl>> nodeUpdater, HttpConstants.Scheme scheme,
+            Function<Request, CancellableFuture<Response>> discoveryRequestSender) {
         NodeDiscovery nodeDiscovery;
         if (nodeDiscoveryFactory != null) {
             nodeDiscovery = nodeDiscoveryFactory.apply(client);
         } else {
-            nodeDiscovery = new ElasticsearchNodeDiscovery(client, discoveryServerTimeoutMillis, scheme);
+            nodeDiscovery = new ElasticsearchNodeDiscovery(discoveryRequestSender, discoveryServerTimeoutMillis, scheme);
         }
         return new NodeDiscoveryScheduler(nodeDiscovery, vertx, nodeUpdater, discoveryIntervalMillis,
                 discoveryAfterFailureDelayMillis);

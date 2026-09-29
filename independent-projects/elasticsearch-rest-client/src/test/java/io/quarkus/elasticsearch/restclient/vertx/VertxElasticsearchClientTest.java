@@ -2,16 +2,23 @@ package io.quarkus.elasticsearch.restclient.vertx;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
+import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServer;
@@ -28,6 +35,84 @@ class VertxElasticsearchClientTest {
     @AfterAll
     static void teardown() throws Exception {
         vertx.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    void discoveryRecoversWhenSelectorRejectsAllNodes(boolean resolver) throws Exception {
+        AtomicReference<String> discoveryResponse = new AtomicReference<>();
+        AtomicInteger discoveryHits = new AtomicInteger();
+        AtomicInteger rejectedApplicationHits = new AtomicInteger();
+        AtomicReference<String> discoveryAuthorization = new AtomicReference<>();
+        HttpServer rejected = startServer(req -> {
+            if (req.path().equals("/prefix/_nodes/http")) {
+                discoveryHits.incrementAndGet();
+                discoveryAuthorization.set(req.getHeader("Authorization"));
+                req.response().end(discoveryResponse.get());
+            } else {
+                rejectedApplicationHits.incrementAndGet();
+                req.response().end("rejected");
+            }
+        });
+        HttpServer eligible = startServer(req -> {
+            if (req.path().equals("/prefix/_nodes/http")) {
+                req.response().end(discoveryResponse.get());
+            } else {
+                req.response().end("eligible");
+            }
+        });
+        String master = nodeJson(rejected.actualPort(), "master");
+        discoveryResponse.set("{\"nodes\":{\"master\":" + master + "}}");
+        Promise<VertxElasticsearchClient> built = Promise.promise();
+        // Construct on the event loop so scheduled discovery starts after construction.
+        vertx.runOnContext(ignored -> {
+            try {
+                RequestDispatcherFactory factory = resolver ? RequestDispatcher.vertxResolver()
+                        : RequestDispatcher.roundRobin();
+                built.complete(VertxElasticsearchClient
+                        .builder(vertx, URI.create("http://127.0.0.1:" + rejected.actualPort()))
+                        .setRequestDispatcher(factory.nodeSelector(NodeSelector.skipDedicatedMasters())
+                                .pathPrefix("/prefix").defaultHeaders(Map.of("Authorization", "Bearer discovery-test")))
+                        .nodeDiscovery(config -> config.discoveryIntervalMillis(50))
+                        .build());
+            } catch (Throwable failure) {
+                built.fail(failure);
+            }
+        });
+        VertxElasticsearchClient client = built.future().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        try {
+            await().atMost(Duration.ofSeconds(5))
+                    .untilAsserted(() -> assertThatThrownBy(() -> client.performRequest(new Request("GET", "/")))
+                            .isInstanceOf(IOException.class).hasMessageContaining("No routable nodes"));
+            int applicationHits = rejectedApplicationHits.get();
+            int discoveries = discoveryHits.get();
+            await().atMost(Duration.ofSeconds(5)).until(() -> discoveryHits.get() > discoveries);
+            assertThatThrownBy(() -> client.performRequest(new Request("GET", "/_nodes/http")))
+                    .isInstanceOf(IOException.class).hasMessageContaining("No routable nodes");
+            assertThat(rejectedApplicationHits.get()).isEqualTo(applicationHits);
+            assertThat(discoveryAuthorization.get()).isEqualTo("Bearer discovery-test");
+
+            discoveryResponse.set("{\"nodes\":{\"master\":" + master + ",\"data\":"
+                    + nodeJson(eligible.actualPort(), "data") + "}}");
+            await().atMost(Duration.ofSeconds(5))
+                    .untilAsserted(() -> assertThat(client.performRequest(new Request("GET", "/")).getBody().toString())
+                            .isEqualTo("eligible"));
+            // Both policies now have cached resolver endpoints; discovery must never put the
+            // rejected master back into application routing.
+            for (int i = 0; i < 10; i++) {
+                assertThat(client.performRequest(new Request("GET", "/")).getBody().toString()).isEqualTo("eligible");
+            }
+            assertThat(rejectedApplicationHits.get()).isEqualTo(applicationHits);
+        } finally {
+            client.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+            rejected.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+            eligible.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    private static String nodeJson(int port, String role) {
+        return "{\"name\":\"node-" + port + "\",\"version\":\"9.0.0\",\"roles\":[\"" + role
+                + "\"],\"http\":{\"publish_address\":\"127.0.0.1:" + port + "\"}}";
     }
 
     @Test

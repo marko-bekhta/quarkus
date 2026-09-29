@@ -98,22 +98,35 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
 
     @Override
     public CancellableFuture<Response> dispatch(Request request) {
+        return dispatch(request, ElasticsearchAddress.INSTANCE);
+    }
+
+    @Override
+    CancellableFuture<Response> dispatchForDiscovery(Request request) {
+        return dispatch(request, ElasticsearchAddress.DISCOVERY);
+    }
+
+    private List<NodeImpl> nodesFor(ElasticsearchAddress address) {
+        return address == ElasticsearchAddress.DISCOVERY ? allNodes : routableNodes;
+    }
+
+    private CancellableFuture<Response> dispatch(Request request, ElasticsearchAddress address) {
         Promise<Response> promise = Promise.promise();
         CancellableFuture<Response> cancellable = new CancellableFuture<>(promise.future());
 
-        List<NodeImpl> currentNodes = this.routableNodes;
+        List<NodeImpl> currentNodes = nodesFor(address);
         if (currentNodes.isEmpty()) {
             promise.fail(noRoutableNodesException());
             return cancellable;
         }
 
         int maxRetries = currentNodes.size();
-        sendViaResolver(request, null, maxRetries, cancellable)
+        sendViaResolver(request, address, null, maxRetries, cancellable)
                 .onComplete(promise);
         return cancellable;
     }
 
-    private Future<Response> sendViaResolver(Request request, Throwable previousException,
+    private Future<Response> sendViaResolver(Request request, ElasticsearchAddress address, Throwable previousException,
             int retriesLeft, CancellableFuture<Response> cancellable) {
         if (retriesLeft <= 0) {
             return Future.failedFuture(previousException != null
@@ -125,7 +138,7 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
         }
 
         RequestOptions options = new RequestOptions()
-                .setServer(ElasticsearchAddress.INSTANCE)
+                .setServer(address)
                 .setMethod(HttpMethod.valueOf(request.getMethod()))
                 .setURI(buildUri(request))
                 .setSsl(scheme.isSsl());
@@ -154,7 +167,7 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
                 })
                 .compose(httpResponse -> httpResponse.body().map(body -> {
                     SocketAddress remote = httpResponse.request().connection().remoteAddress();
-                    NodeImpl node = findNodeByRemoteAddress(remote);
+                    NodeImpl node = findNodeByRemoteAddress(remote, address);
                     URI nodeUri = node != null ? node.getHost()
                             : (remote != null
                                     ? URI.create(scheme.value + "://" + remote.host() + ":" + remote.port())
@@ -205,7 +218,7 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
                                 if (cancellable.isCancelled()) {
                                     return Future.failedFuture(new CancellationException());
                                 }
-                                return sendViaResolver(request, ex, retriesLeft - 1, cancellable);
+                                return sendViaResolver(request, address, ex, retriesLeft - 1, cancellable);
                             } else {
                                 if (node != null) {
                                     markAlive(node);
@@ -227,17 +240,17 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
                                 return Future.failedFuture(
                                         cancellable.isCancelled() ? new CancellationException() : ex);
                             }
-                            return sendViaResolver(request, ex, retriesLeft - 1, cancellable);
+                            return sendViaResolver(request, address, ex, retriesLeft - 1, cancellable);
                         });
     }
 
-    private NodeImpl findNodeByRemoteAddress(SocketAddress remote) {
+    private NodeImpl findNodeByRemoteAddress(SocketAddress remote, ElasticsearchAddress address) {
         if (remote == null) {
             return null;
         }
         String remoteHost = remote.host();
         int remotePort = remote.port();
-        for (NodeImpl node : this.routableNodes) {
+        for (NodeImpl node : nodesFor(address)) {
             if (node.getHost().getHost().equals(remoteHost) && node.getResolvedPort() == remotePort) {
                 return node;
             }
@@ -271,10 +284,10 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
         @Override
         public Future<ResolverState> resolve(ElasticsearchAddress address,
                 EndpointBuilder<Object, ElasticsearchServer> builder) {
-            // Node-selector filtering already happened when the node set was published, so we
-            // register the pre-computed routable snapshot directly. Liveness (dead-node skipping)
+            // Application requests use the pre-computed routable snapshot; discovery uses
+            // all known nodes with a separate address/cache entry. Liveness (dead-node skipping)
             // is applied per selection round by DeadNodeAwareSelector, not here.
-            List<NodeImpl> currentNodes = ResolverRequestDispatcher.this.routableNodes;
+            List<NodeImpl> currentNodes = nodesFor(address);
 
             for (NodeImpl node : currentNodes) {
                 builder = builder.addServer(new ElasticsearchServer(node), node.getHost().toString());

@@ -100,12 +100,21 @@ public class DefaultRequestDispatcher extends AbstractRequestDispatcher {
 
     @Override
     public CancellableFuture<Response> dispatch(Request request) {
+        return dispatch(request, routableNodes);
+    }
+
+    @Override
+    CancellableFuture<Response> dispatchForDiscovery(Request request) {
+        return dispatch(request, allNodes);
+    }
+
+    private CancellableFuture<Response> dispatch(Request request, List<NodeImpl> nodes) {
         Promise<Response> promise = Promise.promise();
         CancellableFuture<Response> cancellable = new CancellableFuture<>(promise.future());
 
         List<NodeImpl> candidates;
         try {
-            candidates = selectNodes();
+            candidates = selectNodes(nodes);
         } catch (IOException e) {
             promise.fail(e);
             return cancellable;
@@ -136,7 +145,10 @@ public class DefaultRequestDispatcher extends AbstractRequestDispatcher {
      * retryable failure.
      */
     List<NodeImpl> selectNodes() throws IOException {
-        List<NodeImpl> routable = this.routableNodes;
+        return selectNodes(routableNodes);
+    }
+
+    private List<NodeImpl> selectNodes(List<NodeImpl> routable) throws IOException {
         if (routable.isEmpty()) {
             throw noRoutableNodesException();
         }

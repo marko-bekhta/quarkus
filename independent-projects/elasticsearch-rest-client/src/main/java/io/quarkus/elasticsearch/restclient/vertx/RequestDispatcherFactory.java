@@ -23,7 +23,9 @@ public abstract class RequestDispatcherFactory {
     protected BackoffStrategy backoffStrategy = BackoffStrategy.DEFAULT;
 
     /**
-     * Sets the {@link NodeSelector} used to filter candidate nodes before dispatch.
+     * Sets the {@link NodeSelector} used to filter candidate nodes for application requests.
+     * Node-discovery requests use all known nodes so discovery can recover when the selector
+     * rejects every currently known node.
      *
      * @param nodeSelector the selector (may be {@code null} for {@link NodeSelector#any()})
      * @return this factory for chaining

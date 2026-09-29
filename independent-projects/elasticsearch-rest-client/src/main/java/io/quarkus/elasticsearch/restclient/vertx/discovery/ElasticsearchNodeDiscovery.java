@@ -8,9 +8,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
+import io.quarkus.elasticsearch.restclient.vertx.CancellableFuture;
 import io.quarkus.elasticsearch.restclient.vertx.Node;
 import io.quarkus.elasticsearch.restclient.vertx.Request;
+import io.quarkus.elasticsearch.restclient.vertx.Response;
 import io.quarkus.elasticsearch.restclient.vertx.Roles;
 import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient;
 import io.quarkus.elasticsearch.restclient.vertx.internal.HttpConstants;
@@ -38,7 +41,7 @@ public class ElasticsearchNodeDiscovery implements NodeDiscovery {
     // rather than rebuilding one per request.
     private static final JsonFactory JSON = new JsonFactory();
 
-    private final VertxElasticsearchClient client;
+    private final Function<Request, CancellableFuture<Response>> requestSender;
     private final Request discoveryRequest;
     private final HttpConstants.Scheme scheme;
 
@@ -57,7 +60,12 @@ public class ElasticsearchNodeDiscovery implements NodeDiscovery {
      */
     public ElasticsearchNodeDiscovery(VertxElasticsearchClient client,
             long discoveryServerTimeoutMillis, HttpConstants.Scheme scheme) {
-        this.client = client;
+        this(client::performRequestAsync, discoveryServerTimeoutMillis, scheme);
+    }
+
+    ElasticsearchNodeDiscovery(Function<Request, CancellableFuture<Response>> requestSender,
+            long discoveryServerTimeoutMillis, HttpConstants.Scheme scheme) {
+        this.requestSender = requestSender;
         // Passed to Elasticsearch as the server-side timeout for the nodes-info query, not a
         // client-side request timeout (see the constructor Javadoc).
         this.discoveryRequest = new Request("GET", "/_nodes/http",
@@ -68,7 +76,7 @@ public class ElasticsearchNodeDiscovery implements NodeDiscovery {
 
     @Override
     public Future<List<Node>> discover() {
-        return client.performRequestAsync(discoveryRequest)
+        return requestSender.apply(discoveryRequest)
                 .map(response -> {
                     try {
                         return parseNodes(response.getBody().getBytes(), scheme);

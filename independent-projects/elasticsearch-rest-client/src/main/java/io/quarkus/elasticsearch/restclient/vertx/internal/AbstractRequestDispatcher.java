@@ -148,7 +148,8 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
         this.allNodes = initial;
         this.routableNodes = computeRoutableNodes(initial);
         this.nodeDiscoveryScheduler = nodeDiscoveryConfigurer != null
-                ? nodeDiscoveryConfigurer.createScheduler(client, vertx, this::setNodes, scheme)
+                ? nodeDiscoveryConfigurer.createScheduler(client, vertx, this::setNodes, scheme,
+                        this::dispatchForDiscovery)
                 : null;
         // A node selector only ever sees described nodes, and only discovery produces them.
         // With discovery disabled the client stays on undescribed seed nodes forever, so a
@@ -167,6 +168,8 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
 
     @Override
     public abstract CancellableFuture<Response> dispatch(Request request);
+
+    abstract CancellableFuture<Response> dispatchForDiscovery(Request request);
 
     /**
      * Creates the {@link HttpClient} this dispatcher sends requests through. Called once from
