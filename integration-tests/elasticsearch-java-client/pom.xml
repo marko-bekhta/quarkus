@@ -99,6 +99,38 @@
         </resources>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>ban-apache-elasticsearch-transports</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>org.apache.httpcomponents:*</exclude>
+                                        <exclude>org.apache.httpcomponents.client5:*</exclude>
+                                        <exclude>org.apache.httpcomponents.core5:*</exclude>
+                                        <exclude>org.elasticsearch.client:elasticsearch-rest*</exclude>
+                                        <exclude>co.elastic.clients:elasticsearch-rest*</exclude>
+                                    </excludes>
+                                    <includes>
+                                        <!-- RestAssured and other test tools may use Apache HTTP. -->
+                                        <include>*:*:*:*:test</include>
+                                    </includes>
+                                    <message>Elasticsearch Vert.x clients must not depend on Apache HTTP transports.</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
                 <groupId>io.quarkus</groupId>
                 <artifactId>quarkus-maven-plugin</artifactId>
                 <version>${project.version}</version>

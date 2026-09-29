@@ -202,8 +202,7 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
                                 // and skips the dead node without a global resolver-cache rebuild.
                                 // The version is bumped only when the node set actually changes
                                 // (setNodes), which is the one case that requires re-resolve.
-                                IOException ex = new IOException(
-                                        "Node [" + response.getNode() + "] returned status " + statusCode);
+                                IOException ex = new ResponseException(response);
                                 if (previousException != null) {
                                     ex.addSuppressed(previousException);
                                 }

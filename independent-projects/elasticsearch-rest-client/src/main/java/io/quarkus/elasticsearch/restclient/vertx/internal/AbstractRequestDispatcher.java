@@ -26,6 +26,7 @@ import io.quarkus.elasticsearch.restclient.vertx.WarningsHandler;
 import io.quarkus.elasticsearch.restclient.vertx.discovery.NodeDiscoveryConfigurer;
 import io.quarkus.elasticsearch.restclient.vertx.discovery.NodeDiscoveryScheduler;
 import io.vertx.core.Future;
+import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientOptions;
@@ -294,8 +295,11 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
         for (Map.Entry<String, String> header : defaultHeaders.entrySet()) {
             httpRequest.putHeader(header.getKey(), header.getValue());
         }
-        for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
-            httpRequest.putHeader(header.getKey(), header.getValue());
+        if (request.hasHeaders()) {
+            MultiMap requestHeaders = request.getHeaders();
+            for (String name : requestHeaders.names()) {
+                httpRequest.putHeader(name, requestHeaders.getAll(name));
+            }
         }
         if (compressionEnabled) {
             httpRequest.putHeader(HttpConstants.Headers.ACCEPT_ENCODING, HttpConstants.Headers.GZIP);
@@ -361,8 +365,7 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
                         return Future.succeededFuture(response);
                     } else if (HttpConstants.isRetryableStatus(statusCode)) {
                         markDead(node);
-                        IOException ex = new IOException(
-                                "Node [" + node.getHost() + "] returned status " + statusCode);
+                        IOException ex = new ResponseException(response);
                         if (previousException != null) {
                             ex.addSuppressed(previousException);
                         }

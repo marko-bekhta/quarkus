@@ -2,8 +2,10 @@ package io.quarkus.it.elasticsearch.java;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletionStage;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
@@ -25,6 +27,24 @@ public class FruitResource {
     @Inject
     FruitService fruitService;
 
+    @GET
+    @Path("/apache-classes")
+    public List<String> apacheClasses() {
+        List<String> present = new ArrayList<>();
+        for (String name : List.of("org.apache.http.client.HttpClient", "org.apache.http.HttpHost",
+                "org.apache.hc.client5.http.impl.async.CloseableHttpAsyncClient", "org.apache.hc.core5.http.HttpHost",
+                "org.elasticsearch.client.RestClient", "org.elasticsearch.client.sniff.Sniffer",
+                "co.elastic.clients.transport.rest5_client.low_level.Rest5Client")) {
+            try {
+                Class.forName(name, false, Thread.currentThread().getContextClassLoader());
+                present.add(name);
+            } catch (ClassNotFoundException expected) {
+                // The production application must not contain Apache Elasticsearch transports.
+            }
+        }
+        return present;
+    }
+
     @POST
     public Response index(Fruit fruit) throws IOException {
         if (fruit.id == null) {
@@ -32,6 +52,22 @@ public class FruitResource {
         }
         fruitService.index(fruit);
         return Response.created(URI.create("/fruits/" + fruit.id)).build();
+    }
+
+    @POST
+    @Path("/async")
+    public CompletionStage<Response> indexAsync(Fruit fruit) {
+        if (fruit.id == null) {
+            fruit.id = UUID.randomUUID().toString();
+        }
+        return fruitService.indexAsync(fruit)
+                .thenApply(ignored -> Response.created(URI.create("/fruits/async/" + fruit.id)).build());
+    }
+
+    @GET
+    @Path("/async/{id}")
+    public CompletionStage<Fruit> getAsync(@PathParam("id") String id) {
+        return fruitService.getAsync(id);
     }
 
     @GET

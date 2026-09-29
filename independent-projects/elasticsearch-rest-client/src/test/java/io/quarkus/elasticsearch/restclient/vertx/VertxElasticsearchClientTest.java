@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -37,6 +38,24 @@ class VertxElasticsearchClientTest {
     @AfterAll
     static void teardown() throws Exception {
         vertx.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void blockingRequestOnWorkerWithEventLoopContext() throws Exception {
+        HttpServer server = startServer(request -> request.response().end("ok"));
+        VertxElasticsearchClient client = VertxElasticsearchClient
+                .builder(vertx, URI.create("http://localhost:" + server.actualPort())).build();
+        try {
+            Response response = vertx.getOrCreateContext().executeBlocking(() -> {
+                assertThat(Vertx.currentContext().isEventLoopContext()).isTrue();
+                assertThat(Context.isOnEventLoopThread()).isFalse();
+                return client.performRequest(new Request("GET", "/"));
+            }).toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(response.getStatusCode()).isEqualTo(200);
+        } finally {
+            client.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+            server.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        }
     }
 
     @ParameterizedTest

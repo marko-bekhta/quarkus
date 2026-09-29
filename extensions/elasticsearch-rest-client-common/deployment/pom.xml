@@ -21,12 +21,6 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc-deployment</artifactId>
         </dependency>
-        <!-- Because sniffer is using the jsonp internally,
-            hence we want to get various "native" fixes without repeating things here -->
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-jsonp-deployment</artifactId>
-        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-elasticsearch-rest-client-common</artifactId>

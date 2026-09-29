@@ -2,7 +2,6 @@ package io.quarkus.elasticsearch.restclient.vertx.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -175,8 +174,8 @@ class ResolverRequestDispatcherTest {
 
     @Test
     void allNodesFail503() throws Exception {
-        HttpServer server1 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end());
-        HttpServer server2 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end());
+        HttpServer server1 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end("unavailable"));
+        HttpServer server2 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end("unavailable"));
         try {
             ResolverRequestDispatcher dispatcher = createDispatcher();
             dispatcher.setNodes(List.of(
@@ -188,7 +187,10 @@ class ResolverRequestDispatcherTest {
                 assertThat(false).as("Should have thrown IOException").isTrue();
             } catch (Exception e) {
                 Throwable cause = unwrap(e);
-                assertThat(cause).isInstanceOf(IOException.class);
+                assertThat(cause).isInstanceOfSatisfying(ResponseException.class, exception -> {
+                    assertThat(exception.getResponse().getStatusCode()).isEqualTo(503);
+                    assertThat(exception.getResponse().getBody().toString()).isEqualTo("unavailable");
+                });
                 assertThat(cause.getSuppressed()).isNotEmpty();
             }
         } finally {

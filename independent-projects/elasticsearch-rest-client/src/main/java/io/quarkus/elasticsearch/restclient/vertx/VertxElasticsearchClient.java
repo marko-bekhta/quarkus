@@ -42,8 +42,8 @@ public class VertxElasticsearchClient {
     }
 
     public Response performRequest(Request request) throws IOException {
-        Context context = Vertx.currentContext();
-        if (context != null && context.isEventLoopContext()) {
+        // Worker tasks can retain an event-loop context; check the executing thread instead.
+        if (Context.isOnEventLoopThread()) {
             throw new IllegalStateException(
                     "Cannot call performRequest from a Vert.x event loop thread -- use performRequestAsync instead");
         }

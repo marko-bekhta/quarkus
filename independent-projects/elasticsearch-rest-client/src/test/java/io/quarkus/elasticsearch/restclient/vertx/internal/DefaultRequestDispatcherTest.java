@@ -3,7 +3,6 @@ package io.quarkus.elasticsearch.restclient.vertx.internal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +22,7 @@ import io.quarkus.elasticsearch.restclient.vertx.Request;
 import io.quarkus.elasticsearch.restclient.vertx.Response;
 import io.quarkus.elasticsearch.restclient.vertx.ResponseException;
 import io.quarkus.elasticsearch.restclient.vertx.WarningsHandler;
+import io.vertx.core.MultiMap;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServer;
@@ -165,8 +165,8 @@ class DefaultRequestDispatcherTest {
 
     @Test
     void allNodesFail503() throws Exception {
-        HttpServer server1 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end());
-        HttpServer server2 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end());
+        HttpServer server1 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end("unavailable"));
+        HttpServer server2 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end("unavailable"));
         try {
             DefaultRequestDispatcher dispatcher = createDispatcher();
             dispatcher.setNodes(List.of(
@@ -178,7 +178,10 @@ class DefaultRequestDispatcherTest {
                 assertThat(false).as("Should have thrown IOException").isTrue();
             } catch (Exception e) {
                 Throwable cause = unwrap(e);
-                assertThat(cause).isInstanceOf(IOException.class);
+                assertThat(cause).isInstanceOfSatisfying(ResponseException.class, exception -> {
+                    assertThat(exception.getResponse().getStatusCode()).isEqualTo(503);
+                    assertThat(exception.getResponse().getBody().toString()).isEqualTo("unavailable");
+                });
                 assertThat(cause.getSuppressed()).isNotEmpty();
             }
         } finally {
@@ -225,6 +228,35 @@ class DefaultRequestDispatcherTest {
             dispatch(dispatcher, request);
 
             assertThat(receivedAuth.get()).isEqualTo("Basic override");
+        } finally {
+            server.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void repeatedRequestHeadersOverrideDefaults() throws Exception {
+        AtomicReference<List<String>> receivedTags = new AtomicReference<>();
+        AtomicReference<String> receivedDefault = new AtomicReference<>();
+        HttpServer server = startServer(vertx, (req, resp) -> {
+            receivedTags.set(req.headers().getAll("X-Tag"));
+            receivedDefault.set(req.getHeader("X-Default"));
+            resp.setStatusCode(200).end();
+        });
+        try {
+            DefaultRequestDispatcher dispatcher = RequestDispatchers.defaultDispatcher(
+                    NodeSelector.any(), FailureListener.NO_OP,
+                    Map.of("X-Tag", "default", "X-Default", "kept"),
+                    null, false, WarningsHandler.PERMISSIVE, vertx);
+            dispatcher.setNodes(List.of(new NodeImpl(URI.create("http://localhost:" + server.actualPort()))));
+
+            MultiMap headers = MultiMap.caseInsensitiveMultiMap().add("X-Tag", "first");
+            Request request = new Request("GET", "/", Map.of(), headers, null, null);
+            assertThat(request.getHeaders()).isSameAs(headers);
+            headers.add("x-tag", "second");
+            dispatch(dispatcher, request);
+
+            assertThat(receivedTags.get()).containsExactly("first", "second");
+            assertThat(receivedDefault.get()).isEqualTo("kept");
         } finally {
             server.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
         }

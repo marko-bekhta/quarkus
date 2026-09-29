@@ -15,8 +15,7 @@ import co.elastic.clients.elasticsearch.ElasticsearchAsyncClient;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.json.jackson.Jackson3JsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
-import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
-import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
+import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient;
 import tools.jackson.databind.json.JsonMapper;
 
 @ApplicationScoped
@@ -24,7 +23,7 @@ public class ElasticsearchJavaClientProducer {
 
     @Inject
     @Default
-    Rest5Client restClient;
+    VertxElasticsearchClient restClient;
 
     @Inject
     JsonMapper objectMapper;
@@ -35,7 +34,7 @@ public class ElasticsearchJavaClientProducer {
 
     @PostConstruct
     void initTransport() {
-        this.transport = new Rest5ClientTransport(restClient, new Jackson3JsonpMapper(objectMapper));
+        this.transport = new VertxElasticsearchTransport(restClient, new Jackson3JsonpMapper(objectMapper));
     }
 
     @Produces

@@ -7,7 +7,7 @@ https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
 include::_attributes.adoc[]
 :summary: This guide covers how to interact with an Elasticsearch cluster using the low level REST client or the Elasticsearch Java client.
 :topics: data,search,elasticsearch,nosql
-:extensions: io.quarkus:quarkus-elasticsearch-java-client,io.quarkus:quarkus-elasticsearch-rest-client
+:extensions: io.quarkus:quarkus-elasticsearch-java-client,io.quarkus:quarkus-elasticsearch-vertx-client
 
 Elasticsearch is a well known full text search engine and NoSQL datastore.
 
@@ -42,15 +42,15 @@ The elements are stored in Elasticsearch.
 First, we need a new project. Create a new project with the following command:
 
 :create-app-artifact-id: elasticsearch-quickstart
-:create-app-extensions: rest-jackson,elasticsearch-rest-client
+:create-app-extensions: rest-jackson,elasticsearch-vertx-client
 include::{includes}/devtools/create-app.adoc[]
 
 This command generates a Maven structure importing the Quarkus REST (formerly RESTEasy Reactive), Jackson, and Elasticsearch low level REST client extensions.
 
-The Elasticsearch low level REST client comes with the `quarkus-elasticsearch-rest-client` extension
+The Elasticsearch low level REST client comes with the `quarkus-elasticsearch-vertx-client` extension
 that has been added to your build file.
 
-If you want to use the Elasticsearch Java client instead, replace the `quarkus-elasticsearch-rest-client` extension by the `quarkus-elasticsearch-java-client` extension.
+If you want to use the Elasticsearch Java client instead, replace the `quarkus-elasticsearch-vertx-client` extension by the `quarkus-elasticsearch-java-client` extension.
 
 [NOTE]
 ====
@@ -67,14 +67,14 @@ For the Elasticsearch low level REST client, add the following dependency to you
 ----
 <dependency>
     <groupId>io.quarkus</groupId>
-    <artifactId>quarkus-elasticsearch-rest-client</artifactId>
+    <artifactId>quarkus-elasticsearch-vertx-client</artifactId>
 </dependency>
 ----
 
 [source,gradle,role="secondary asciidoc-tabs-target-sync-gradle"]
 .build.gradle
 ----
-implementation("io.quarkus:quarkus-elasticsearch-rest-client")
+implementation("io.quarkus:quarkus-elasticsearch-vertx-client")
 ----
 
 For the Elasticsearch Java client, add the following dependency to your build file:
@@ -125,33 +125,31 @@ package org.acme.elasticsearch;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import co.elastic.clients.transport.rest5_client.low_level.Request;
-import co.elastic.clients.transport.rest5_client.low_level.Response;
-import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
+import io.quarkus.elasticsearch.restclient.vertx.Request;
+import io.quarkus.elasticsearch.restclient.vertx.Response;
+import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient;
 
-import org.apache.hc.core5.http.ContentType;
-import org.apache.hc.core5.http.ParseException;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
-import org.apache.hc.core5.http.io.entity.StringEntity;
-
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 @ApplicationScoped
 public class FruitService {
     @Inject
-    Rest5Client restClient; //<1>
+    VertxElasticsearchClient restClient; //<1>
 
     public void index(Fruit fruit) throws IOException {
         Request request = new Request(
                 "PUT",
-                "/fruits/_doc/" + fruit.id); //<2>
-        request.setJsonEntity(JsonObject.mapFrom(fruit).toString()); //<3>
+                "/fruits/_doc/" + fruit.id, Map.of(), //<2>
+                Map.of("Content-Type", "application/json"),
+                JsonObject.mapFrom(fruit).toBuffer(), null); //<3>
         restClient.performRequest(request); //<4>
     }
 
@@ -166,11 +164,11 @@ public class FruitService {
             entityList.add(JsonObject.mapFrom(fruit));
         }
 
+        Buffer body = Buffer.buffer(toNdJsonString(entityList)); //<6>
         Request request = new Request(
-                "POST", "fruits/_bulk?pretty");
-        request.setEntity(new StringEntity(
-                toNdJsonString(entityList),//<6>
-                ContentType.create("application/x-ndjson")));//<7>
+                "POST", "/fruits/_bulk", Map.of("pretty", "true"),
+                Map.of("Content-Type", "application/x-ndjson"), //<7>
+                body, null);
         restClient.performRequest(request);
     }
 
@@ -184,42 +182,39 @@ public class FruitService {
         }
 
         Request request = new Request(
-                "POST", "fruits/_bulk?pretty");
-        request.setEntity(new StringEntity(
-                toNdJsonString(entityList),
-                ContentType.create("application/x-ndjson")));
+                "POST", "/fruits/_bulk", Map.of("pretty", "true"),
+                Map.of("Content-Type", "application/x-ndjson"),
+                Buffer.buffer(toNdJsonString(entityList)), null);
         restClient.performRequest(request);
     }
 
-    public Fruit get(String id) throws IOException, ParseException {
+    public Fruit get(String id) throws IOException {
         Request request = new Request(
                 "GET",
                 "/fruits/_doc/" + id);
         Response response = restClient.performRequest(request);
-        String responseBody = EntityUtils.toString(response.getEntity());
+        String responseBody = response.getBody().toString();
         JsonObject json = new JsonObject(responseBody); //<9>
         return json.getJsonObject("_source").mapTo(Fruit.class);
     }
 
-    public List<Fruit> searchByColor(String color) throws IOException, ParseException {
+    public List<Fruit> searchByColor(String color) throws IOException {
         return search("color", color);
     }
 
-    public List<Fruit> searchByName(String name) throws IOException, ParseException {
+    public List<Fruit> searchByName(String name) throws IOException {
         return search("name", name);
     }
 
-    private List<Fruit> search(String term, String match) throws IOException, ParseException {
-        Request request = new Request(
-                "GET",
-                "/fruits/_search");
+    private List<Fruit> search(String term, String match) throws IOException {
         //construct a JSON query like {"query": {"match": {"<term>": "<match"}}
         JsonObject termJson = new JsonObject().put(term, match);
         JsonObject matchJson = new JsonObject().put("match", termJson);
         JsonObject queryJson = new JsonObject().put("query", matchJson);
-        request.setJsonEntity(queryJson.encode());
+        Request request = new Request("GET", "/fruits/_search", Map.of(),
+                Map.of("Content-Type", "application/json"), queryJson.toBuffer(), null);
         Response response = restClient.performRequest(request);
-        String responseBody = EntityUtils.toString(response.getEntity());
+        String responseBody = response.getBody().toString();
 
         JsonObject json = new JsonObject(responseBody);
         JsonArray hits = json.getJsonObject("hits").getJsonArray("hits");
@@ -239,7 +234,7 @@ public class FruitService {
     }    
 }
 ----
-<1> We inject an Elasticsearch low level `Rest5Client` into our service.
+<1> We inject an Elasticsearch low level `VertxElasticsearchClient` into our service.
 <2> We create an Elasticsearch request.
 <3> We use Vert.x `JsonObject` to serialize the object before sending it to Elasticsearch, you can use whatever you want to serialize your objects to JSON.
 <4> We send the request (indexing request here) to Elasticsearch.
@@ -383,52 +378,27 @@ For example, when accessing an Elasticsearch cluster that is set up for TLS on t
 
 [source,java]
 ----
-import io.quarkus.elasticsearch.restclient.lowlevel.ElasticsearchClientConfig;
-import org.apache.hc.client5.http.impl.async.HttpAsyncClientBuilder;
-import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManagerBuilder;
-import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
-import org.apache.hc.core5.ssl.SSLContextBuilder;
-import org.apache.hc.core5.ssl.SSLContexts;
-
-import jakarta.enterprise.context.Dependent;
-import javax.net.ssl.SSLContext;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.security.KeyStore;
+import io.quarkus.elasticsearch.vertx.ElasticsearchClientConfig;
+import io.quarkus.elasticsearch.vertx.ElasticsearchClientConfigConfigurer;
+import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClientBuilder;
+import io.vertx.core.http.HttpClientOptions;
+import io.vertx.core.net.PfxOptions;
 
 @ElasticsearchClientConfig
-public class SSLContextConfigurator implements ElasticsearchClientConfigConfigurer {
+public class TrustStoreConfigurator implements ElasticsearchClientConfigConfigurer {
     @Override
-    public void accept(HttpAsyncClientBuilder httpClientBuilder) {
-        try {
-            String keyStorePass = "password-for-keystore";
-            Path trustStorePath = Paths.get("/path/to/truststore.p12");
-            KeyStore truststore = KeyStore.getInstance("pkcs12");
-            try (InputStream is = Files.newInputStream(trustStorePath)) {
-                truststore.load(is, keyStorePass.toCharArray());
-            }
-            SSLContextBuilder sslBuilder = SSLContexts.custom()
-                    .loadTrustMaterial(truststore, null);
-            SSLContext sslContext = sslBuilder.build();
-
-            httpClientBuilder.setConnectionManager(
-                    PoolingAsyncClientConnectionManagerBuilder
-                            .create().setTlsStrategy(
-                                    ClientTlsStrategyBuilder.create()
-                                            .setSslContext(sslContext).buildAsync()
-                            ).build()
-            );
-
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+    public void accept(VertxElasticsearchClientBuilder builder) {
+        builder.setHttpClientOptions(new HttpClientOptions().setTrustOptions(new PfxOptions()
+                .setPath("/path/to/truststore.p12")
+                .setPassword("password-for-keystore")));
     }
 }
 ----
 
-See https://www.elastic.co/guide/en/elasticsearch/client/java-api-client/current/_encrypted_communication.html[Elasticsearch documentation] for more details on this particular example.
+`setHttpClientOptions` replaces the HTTP client options built from the `quarkus.elasticsearch.*` configuration.
+Include any configured settings you still need in the supplied `HttpClientOptions`.
+
+Set `quarkus.elasticsearch.protocol=https` to enable TLS. Certificate and hostname verification remain enabled.
 
 [NOTE]
 ====
@@ -610,6 +580,45 @@ You can then point your browser to `http://localhost:8080/fruits.html` and use y
 
 Accessing an Elasticsearch cluster from the low level REST client or the Elasticsearch Java client is easy with Quarkus as it provides easy configuration, CDI integration and native support for it.
 
+// TODO: move to migration notes instead
+== Migrating from the Apache REST client
+
+Replace `io.quarkus:quarkus-elasticsearch-rest-client` with `io.quarkus:quarkus-elasticsearch-vertx-client`.
+Inject `io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient` instead of `Rest5Client`.
+Use the Vert.x client's `Request` type with a `Buffer` body, and read responses through `Response.getBody()`.
+Request headers are mutable and use a case-insensitive Vert.x `MultiMap`. Do not modify them while a request is in flight.
+Headers supplied on a request replace client default headers of the same name; otherwise the defaults are used.
+Blocking `performRequest` calls must run on worker threads; use `performRequestAsync` on event-loop threads.
+The extension owns the client lifecycle, so application code must not close the injected client.
+
+The Elasticsearch Java client uses this transport automatically.
+Injection of `ElasticsearchClient` and `ElasticsearchAsyncClient` is unchanged.
+Move customizers to `io.quarkus.elasticsearch.vertx.ElasticsearchClientConfig` and
+`ElasticsearchClientConfigConfigurer`, and customize `VertxElasticsearchClientBuilder` instead of the Apache builder.
+
+The following properties use Vert.x terminology. All names have the `quarkus.elasticsearch.` prefix:
+
+[cols="1,1,1"]
+|===
+|Deprecated alias |Replacement |Default
+|`connection-timeout` |`connect-timeout` |`1S`
+|`socket-timeout` |`read-idle-timeout` |`30S`
+|`max-connections-per-route` |`http1-max-pool-size` |`20`
+|===
+
+Deprecated aliases remain supported. Values from higher-priority configuration sources take precedence;
+when priorities match, the replacement name wins. Defaults apply when neither name is configured.
+`connect-timeout` limits connection establishment, while `read-idle-timeout` limits how long a connection can go without receiving data.
+`http1-max-pool-size` limits HTTP/1 connections per server.
+
+`max-connections` and `io-thread-counts` have been removed.
+Size pools with `http1-max-pool-size`; there is no equivalent total-connection setting.
+The client shares Quarkus-managed Vert.x threads: use `quarkus.vertx.event-loops-pool-size` when tuning that shared pool.
+
+The Vert.x and Java client extensions no longer require Apache HTTP Components.
+Hibernate Search currently retains its Apache transport and its separate per-backend configuration.
+Applications also using Hibernate Search can therefore still contain Apache dependencies.
+
 == Configuration Reference
 
-include::{generated-dir}/config/quarkus-elasticsearch-rest-client.adoc[opts=optional, leveloffset=+1]
+include::{generated-dir}/config/quarkus-elasticsearch-vertx-client.adoc[opts=optional, leveloffset=+1]

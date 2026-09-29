@@ -3,8 +3,9 @@ package io.quarkus.elasticsearch.restclient.vertx;
 import java.io.IOException;
 
 /**
- * Wraps an Elasticsearch server error response that is not retryable (e.g. 500, 501,
- * or 505+), providing access to the full {@link Response} for inspection.
+ * Wraps an Elasticsearch server error response, providing access to the full
+ * {@link Response} for inspection. Retryable responses are reported after available nodes
+ * have been exhausted.
  */
 public class ResponseException extends IOException {
 

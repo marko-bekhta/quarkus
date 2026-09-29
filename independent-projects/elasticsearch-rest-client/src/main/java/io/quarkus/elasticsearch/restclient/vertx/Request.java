@@ -6,18 +6,21 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 
+import io.vertx.core.MultiMap;
 import io.vertx.core.buffer.Buffer;
 
 /**
  * An HTTP request to send to an Elasticsearch cluster, consisting of an HTTP method,
  * endpoint path, optional query parameters, headers, body, and a warnings handler.
+ * Headers are mutable. A {@link MultiMap} supplied to {@link Request} is kept by reference;
+ * callers must not change it while a request is in flight, including during retries.
  */
 public final class Request {
 
     private final String method;
     private final String endpoint;
     private final Map<String, String> parameters;
-    private final Map<String, String> headers;
+    private volatile MultiMap headers;
     private final Buffer body;
     private final WarningsHandler warningsHandler;
     private final String queryString;
@@ -28,10 +31,15 @@ public final class Request {
 
     public Request(String method, String endpoint, Map<String, String> parameters,
             Map<String, String> headers, Buffer body, WarningsHandler warningsHandler) {
+        this(method, endpoint, parameters, toMultiMap(headers), body, warningsHandler);
+    }
+
+    public Request(String method, String endpoint, Map<String, String> parameters,
+            MultiMap headers, Buffer body, WarningsHandler warningsHandler) {
         this.method = Objects.requireNonNull(method, "method");
         this.endpoint = Objects.requireNonNull(endpoint, "endpoint");
         this.parameters = parameters == null ? Collections.emptyMap() : Map.copyOf(parameters);
-        this.headers = headers == null ? Collections.emptyMap() : Map.copyOf(headers);
+        this.headers = headers;
         this.body = body;
         this.warningsHandler = warningsHandler;
         if (!this.parameters.isEmpty()) {
@@ -65,8 +73,23 @@ public final class Request {
         return parameters;
     }
 
-    public Map<String, String> getHeaders() {
+    /**
+     * Returns the live, case-insensitive headers. A header map is created on first access if needed.
+     * Callers must not modify it while the request is in flight, including during retries.
+     */
+    public MultiMap getHeaders() {
+        if (headers == null) {
+            headers = MultiMap.caseInsensitiveMultiMap();
+        }
         return headers;
+    }
+
+    /**
+     * Returns whether this request currently has any headers without creating a header map.
+     */
+    public boolean hasHeaders() {
+        MultiMap currentHeaders = headers;
+        return currentHeaders != null && !currentHeaders.isEmpty();
     }
 
     public Buffer getBody() {
@@ -84,5 +107,9 @@ public final class Request {
     @Override
     public String toString() {
         return "Request[" + method + " " + endpoint + "]";
+    }
+
+    private static MultiMap toMultiMap(Map<String, String> headers) {
+        return headers == null || headers.isEmpty() ? null : MultiMap.caseInsensitiveMultiMap().addAll(headers);
     }
 }

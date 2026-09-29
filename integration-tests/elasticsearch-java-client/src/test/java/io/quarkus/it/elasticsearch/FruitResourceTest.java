@@ -23,6 +23,14 @@ public class FruitResourceTest {
     };
 
     @Test
+    public void testApacheTransportsAbsent() {
+        // RestAssured brings HTTP Components 4 into the JVM test harness. The packaged application
+        // additionally checks those classes in NativeFruitResourceIT, outside the test classpath.
+        List<String> present = get("/fruits/apache-classes").jsonPath().getList("", String.class);
+        assertThat(present).allMatch(name -> name.startsWith("org.apache.http."));
+    }
+
+    @Test
     public void testEndpoint() {
         // create a Fruit
         Fruit fruit = new Fruit();
@@ -98,6 +106,22 @@ public class FruitResourceTest {
             assertThat(results).isEmpty();
         });
 
+    }
+
+    @Test
+    public void testAsyncEndpoint() {
+        Fruit fruit = new Fruit();
+        fruit.id = "async-fruit";
+        fruit.name = "Blueberry";
+        fruit.color = "Blue";
+
+        given().contentType("application/json").body(fruit)
+                .when().post("/fruits/async")
+                .then().statusCode(201);
+        assertThat(get("/fruits/async/" + fruit.id).as(Fruit.class)).isEqualTo(fruit);
+        given().contentType("application/json").body(List.of(fruit.id))
+                .when().delete("/fruits/bulk")
+                .then().statusCode(200);
     }
 
     @Test

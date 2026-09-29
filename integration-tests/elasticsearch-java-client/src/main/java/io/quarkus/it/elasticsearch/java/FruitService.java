@@ -3,11 +3,13 @@ package io.quarkus.it.elasticsearch.java;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.List;
+import java.util.concurrent.CompletionStage;
 import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import co.elastic.clients.elasticsearch.ElasticsearchAsyncClient;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders;
@@ -25,6 +27,18 @@ import co.elastic.clients.elasticsearch.core.search.HitsMetadata;
 public class FruitService {
     @Inject
     ElasticsearchClient client;
+
+    @Inject
+    ElasticsearchAsyncClient asyncClient;
+
+    public CompletionStage<Void> indexAsync(Fruit fruit) {
+        return asyncClient.index(b -> b.index("fruits").id(fruit.id).document(fruit)).thenApply(response -> null);
+    }
+
+    public CompletionStage<Fruit> getAsync(String id) {
+        return asyncClient.get(b -> b.index("fruits").id(id), Fruit.class)
+                .thenApply(response -> response.found() ? response.source() : null);
+    }
 
     public void index(Fruit fruit) throws IOException {
         IndexRequest<Fruit> request = IndexRequest.of(

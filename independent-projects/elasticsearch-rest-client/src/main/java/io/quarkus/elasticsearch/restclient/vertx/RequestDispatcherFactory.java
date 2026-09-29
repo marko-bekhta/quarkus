@@ -47,7 +47,8 @@ public abstract class RequestDispatcherFactory {
     }
 
     /**
-     * Sets default headers sent with every request.
+     * Sets default headers sent with every request unless that request supplies the same header name.
+     * Request headers replace matching defaults, ignoring case, and may contain multiple values.
      *
      * @param defaultHeaders the headers (may be {@code null} for no defaults)
      * @return this factory for chaining

@@ -676,7 +676,7 @@
                 </dependency>
                 <dependency>
                     <groupId>io.quarkus</groupId>
-                    <artifactId>quarkus-elasticsearch-rest-client</artifactId>
+                    <artifactId>quarkus-elasticsearch-rest-client-common</artifactId>
                     <version>${project.version}</version>
                     <type>pom</type>
                     <scope>test</scope>
@@ -689,7 +689,7 @@
                 </dependency>
                 <dependency>
                     <groupId>io.quarkus</groupId>
-                    <artifactId>quarkus-elasticsearch-rest-client-common</artifactId>
+                    <artifactId>quarkus-elasticsearch-vertx-client</artifactId>
                     <version>${project.version}</version>
                     <type>pom</type>
                     <scope>test</scope>

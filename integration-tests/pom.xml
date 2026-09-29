@@ -388,7 +388,7 @@
                 <module>web-dependency-locator</module>
                 <module>devmode</module>
                 <module>ide-launcher</module>
-                <module>elasticsearch-rest-client</module>
+                <module>elasticsearch-vertx-client</module>
                 <module>elasticsearch-java-client</module>
                 <module>micrometer-prometheus</module>
                 <module>micrometer-prometheus-opentelemetry</module>

@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
-import co.elastic.clients.transport.rest5_client.low_level.Request;
-import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
+import io.quarkus.elasticsearch.restclient.vertx.Request;
+import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient;
 import io.quarkus.test.common.DevServicesContext;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -46,7 +46,7 @@ public class HibernateSearchElasticsearchWithElasticsearchJavaClientDevServicesT
     DevServicesContext context;
 
     @Inject
-    Rest5Client client;
+    VertxElasticsearchClient client;
 
     @Test
     public void testDevServicesProperties() {

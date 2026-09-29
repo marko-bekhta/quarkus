@@ -10,7 +10,7 @@ public class FeatureNameTest {
     public void testName() {
         assertEquals("agroal", Feature.AGROAL.getName());
         assertEquals("security-jpa", Feature.SECURITY_JPA.getName());
-        assertEquals("elasticsearch-rest-client", Feature.ELASTICSEARCH_REST_CLIENT.getName());
+        assertEquals("elasticsearch-vertx-client", Feature.ELASTICSEARCH_VERTX_CLIENT.getName());
     }
 
 }

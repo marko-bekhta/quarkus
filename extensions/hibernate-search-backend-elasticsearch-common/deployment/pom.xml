@@ -25,6 +25,12 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-hibernate-search-backend-elasticsearch-common</artifactId>
         </dependency>
+        <!-- Because sniffer is using the jsonp internally,
+            hence we want to get various "native" fixes without repeating things here -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jsonp-deployment</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
