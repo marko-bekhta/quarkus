@@ -5,7 +5,6 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import io.quarkus.elasticsearch.restclient.vertx.BackoffStrategy;
 import io.quarkus.elasticsearch.restclient.vertx.CancellableFuture;
@@ -48,7 +47,6 @@ import io.vertx.core.spi.endpoint.EndpointResolver;
  */
 public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
 
-    private final AtomicInteger nodeListVersion = new AtomicInteger(0);
     private final HttpConstants.Scheme scheme;
     private final WarningsHandler defaultWarningsHandler;
 
@@ -94,11 +92,6 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
     }
 
     @Override
-    protected void onNodesUpdated() {
-        this.nodeListVersion.incrementAndGet();
-    }
-
-    @Override
     public CancellableFuture<Response> dispatch(Request request) {
         return dispatch(request, ElasticsearchAddress.INSTANCE);
     }
@@ -109,7 +102,11 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
     }
 
     private List<NodeImpl> nodesFor(ElasticsearchAddress address) {
-        return address == ElasticsearchAddress.DISCOVERY ? allNodes : routableNodes;
+        return nodesFor(nodeSnapshot, address);
+    }
+
+    private List<NodeImpl> nodesFor(NodeSnapshot snapshot, ElasticsearchAddress address) {
+        return address == ElasticsearchAddress.DISCOVERY ? snapshot.allNodes() : snapshot.routableNodes();
     }
 
     private CancellableFuture<Response> dispatch(Request request, ElasticsearchAddress address) {
@@ -119,7 +116,8 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
 
         // HttpClient captures the current context for acquisition, response and retry callbacks.
         context.runOnContext(ignored -> {
-            List<NodeImpl> currentNodes = nodesFor(address);
+            NodeSnapshot snapshot = nodeSnapshot;
+            List<NodeImpl> currentNodes = nodesFor(snapshot, address);
             if (currentNodes.isEmpty()) {
                 promise.fail(noRoutableNodesException());
                 return;
@@ -213,12 +211,12 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
                                 if (node != null) {
                                     markDead(node);
                                 }
-                                // No nodeListVersion bump here: the node set itself is unchanged,
+                                // No snapshot version bump here: the node set itself is unchanged,
                                 // only this node's liveness. DeadNodeAwareSelector consults dead
                                 // state live on every select(), so the cached endpoint stays valid
                                 // and skips the dead node without a global resolver-cache rebuild.
                                 // The version is bumped only when the node set actually changes
-                                // (onNodesUpdated), which is the one case that requires re-resolve.
+                                // (setNodes), which is the one case that requires re-resolve.
                                 IOException ex = new IOException(
                                         "Node [" + response.getNode() + "] returned status " + statusCode);
                                 if (previousException != null) {
@@ -296,15 +294,15 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
             // Application requests use the pre-computed routable snapshot; discovery uses
             // all known nodes with a separate address/cache entry. Liveness (dead-node skipping)
             // is applied per selection round by DeadNodeAwareSelector, not here.
-            List<NodeImpl> currentNodes = nodesFor(address);
+            NodeSnapshot snapshot = nodeSnapshot;
+            List<NodeImpl> currentNodes = nodesFor(snapshot, address);
 
             for (NodeImpl node : currentNodes) {
                 builder = builder.addServer(new ElasticsearchServer(node), node.getHost().toString());
             }
 
             Object endpoint = builder.build();
-            int version = nodeListVersion.get();
-            return Future.succeededFuture(new ResolverState(endpoint, version));
+            return Future.succeededFuture(new ResolverState(endpoint, snapshot.version()));
         }
 
         @Override
@@ -314,7 +312,7 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
 
         @Override
         public boolean isValid(ResolverState state) {
-            return state.version == nodeListVersion.get();
+            return state.version == nodeSnapshot.version();
         }
 
         @Override
@@ -328,9 +326,9 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
 
     static class ResolverState {
         final Object endpoint;
-        final int version;
+        final long version;
 
-        ResolverState(Object endpoint, int version) {
+        ResolverState(Object endpoint, long version) {
             this.endpoint = endpoint;
             this.version = version;
         }

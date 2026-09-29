@@ -102,12 +102,12 @@ public class DefaultRequestDispatcher extends AbstractRequestDispatcher {
 
     @Override
     public CancellableFuture<Response> dispatch(Request request) {
-        return dispatch(request, routableNodes);
+        return dispatch(request, nodeSnapshot.routableNodes());
     }
 
     @Override
     CancellableFuture<Response> dispatchForDiscovery(Request request) {
-        return dispatch(request, allNodes);
+        return dispatch(request, nodeSnapshot.allNodes());
     }
 
     private CancellableFuture<Response> dispatch(Request request, List<NodeImpl> nodes) {
@@ -132,7 +132,7 @@ public class DefaultRequestDispatcher extends AbstractRequestDispatcher {
      * <p>
      * Node-selector filtering has already been applied when the node set was published (see
      * {@link AbstractRequestDispatcher#computeRoutableNodes(List)}), so this method works purely
-     * on liveness -- no selection happens here. It reads the immutable {@code routableNodes}
+     * on liveness -- no selection happens here. It reads the immutable routable node snapshot
      * snapshot once and:
      * <ol>
      * <li>picks a starting offset from {@link #roundRobinCounter} so consecutive requests
@@ -147,7 +147,7 @@ public class DefaultRequestDispatcher extends AbstractRequestDispatcher {
      * retryable failure.
      */
     List<NodeImpl> selectNodes() throws IOException {
-        return selectNodes(routableNodes);
+        return selectNodes(nodeSnapshot.routableNodes());
     }
 
     private List<NodeImpl> selectNodes(List<NodeImpl> routable) throws IOException {

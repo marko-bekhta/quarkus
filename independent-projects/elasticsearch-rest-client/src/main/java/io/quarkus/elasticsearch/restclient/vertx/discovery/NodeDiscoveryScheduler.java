@@ -9,6 +9,7 @@ import org.jboss.logging.Logger;
 
 import io.quarkus.elasticsearch.restclient.vertx.Node;
 import io.quarkus.elasticsearch.restclient.vertx.internal.NodeImpl;
+import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -20,7 +21,7 @@ import io.vertx.core.Vertx;
  * <p>
  * Uses Vert.x timers instead of a dedicated {@code ScheduledExecutorService},
  * avoiding an extra thread. All timer management runs on the Vert.x event loop
- * via {@code runOnContext} to avoid races between timer creation and cancellation.
+ * on one captured context to avoid races between timer creation and cancellation.
  */
 public class NodeDiscoveryScheduler {
 
@@ -28,6 +29,7 @@ public class NodeDiscoveryScheduler {
 
     private final NodeDiscovery nodeDiscovery;
     private final Vertx vertx;
+    private final Context context;
     private final Consumer<List<NodeImpl>> nodeUpdater;
     private final long discoveryIntervalMillis;
     private final long discoveryAfterFailureDelayMillis;
@@ -35,15 +37,14 @@ public class NodeDiscoveryScheduler {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private volatile boolean closed = false;
 
-    // Mutated/read only inside runOnContext callbacks, but those may run on different
-    // event-loop threads (the constructor thread, a dispatcher event loop via
-    // discoverOnFailure, and the caller's close()); volatile guarantees visibility.
-    private volatile long pendingTimerId = -1;
+    // Accessed only on the scheduler's owning context.
+    private long pendingTimerId = -1;
 
     NodeDiscoveryScheduler(NodeDiscovery nodeDiscovery, Vertx vertx, Consumer<List<NodeImpl>> nodeUpdater,
             long discoveryIntervalMillis, long discoveryAfterFailureDelayMillis) {
         this.nodeDiscovery = nodeDiscovery;
         this.vertx = vertx;
+        this.context = vertx.getOrCreateContext();
         this.nodeUpdater = nodeUpdater;
         this.discoveryIntervalMillis = discoveryIntervalMillis;
         this.discoveryAfterFailureDelayMillis = discoveryAfterFailureDelayMillis;
@@ -55,7 +56,7 @@ public class NodeDiscoveryScheduler {
      */
     public void start() {
         if (started.compareAndSet(false, true)) {
-            vertx.runOnContext(v -> scheduleDiscovery(0, discoveryIntervalMillis));
+            context.runOnContext(v -> scheduleDiscovery(0, discoveryIntervalMillis));
         }
     }
 
@@ -63,7 +64,7 @@ public class NodeDiscoveryScheduler {
         if (!initialized.get()) {
             return;
         }
-        vertx.runOnContext(v -> {
+        context.runOnContext(v -> {
             if (closed) {
                 return;
             }
@@ -85,7 +86,7 @@ public class NodeDiscoveryScheduler {
     public Future<Void> close() {
         closed = true;
         Promise<Void> promise = Promise.promise();
-        vertx.runOnContext(v -> {
+        context.runOnContext(v -> {
             long current = pendingTimerId;
             pendingTimerId = -1;
             if (current >= 0) {
@@ -106,23 +107,34 @@ public class NodeDiscoveryScheduler {
                 return;
             }
             Future.<List<Node>> succeededFuture().compose(ignored -> nodeDiscovery.discover())
-                    .onSuccess(rawNodes -> {
-                        if (rawNodes != null && !rawNodes.isEmpty()) {
-                            List<NodeImpl> implNodes = new ArrayList<>(rawNodes.size());
-                            for (Node node : rawNodes) {
-                                implNodes.add(NodeImpl.from(node));
-                            }
-                            nodeUpdater.accept(implNodes);
-                        } else {
-                            LOG.warn("Node discovery returned empty node list, keeping existing nodes");
+                    // Custom discovery futures may complete on another context or a plain thread.
+                    // Publish nodes and schedule the next attempt only on our owning context.
+                    .onComplete(result -> context.runOnContext(ignored -> {
+                        if (closed) {
+                            return;
                         }
-                    })
-                    .onFailure(e -> LOG.error("Node discovery failed", e))
-                    .eventually(() -> {
-                        initialized.set(true);
-                        vertx.runOnContext(v -> scheduleDiscovery(nextIntervalMillis, discoveryIntervalMillis));
-                        return Future.succeededFuture();
-                    });
+                        try {
+                            if (result.failed()) {
+                                LOG.error("Node discovery failed", result.cause());
+                            } else {
+                                List<Node> rawNodes = result.result();
+                                if (rawNodes != null && !rawNodes.isEmpty()) {
+                                    List<NodeImpl> implNodes = new ArrayList<>(rawNodes.size());
+                                    for (Node node : rawNodes) {
+                                        implNodes.add(NodeImpl.from(node));
+                                    }
+                                    nodeUpdater.accept(implNodes);
+                                } else {
+                                    LOG.warn("Node discovery returned empty node list, keeping existing nodes");
+                                }
+                            }
+                        } catch (Exception e) {
+                            LOG.error("Failed to update discovered nodes", e);
+                        } finally {
+                            initialized.set(true);
+                            scheduleDiscovery(nextIntervalMillis, discoveryIntervalMillis);
+                        }
+                    }));
         });
     }
 }

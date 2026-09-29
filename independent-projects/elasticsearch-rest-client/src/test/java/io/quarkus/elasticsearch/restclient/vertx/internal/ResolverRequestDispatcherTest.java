@@ -4,16 +4,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import io.quarkus.elasticsearch.restclient.vertx.CancellableFuture;
 import io.quarkus.elasticsearch.restclient.vertx.FailureListener;
@@ -25,6 +29,7 @@ import io.quarkus.elasticsearch.restclient.vertx.WarningsHandler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.spi.endpoint.EndpointBuilder;
 
 class ResolverRequestDispatcherTest {
 
@@ -189,6 +194,47 @@ class ResolverRequestDispatcherTest {
         } finally {
             server1.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
             server2.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    void updateDuringResolutionInvalidatesOldEndpoint(boolean discovery) throws Exception {
+        ResolverRequestDispatcher dispatcher = createDispatcher();
+        NodeImpl oldNode = new NodeImpl(URI.create("http://old:9200"));
+        NodeImpl newNode = new NodeImpl(URI.create("http://new:9200"));
+        dispatcher.setNodes(List.of(oldNode));
+        var resolver = dispatcher.new ElasticsearchEndpointResolver();
+        ElasticsearchAddress address = discovery ? ElasticsearchAddress.DISCOVERY : ElasticsearchAddress.INSTANCE;
+        List<NodeImpl> registered = new ArrayList<>();
+        AtomicBoolean update = new AtomicBoolean(true);
+        EndpointBuilder<Object, ElasticsearchServer> builder = new EndpointBuilder<>() {
+            @Override
+            public EndpointBuilder<Object, ElasticsearchServer> addServer(ElasticsearchServer server, String key) {
+                registered.add(server.node());
+                return this;
+            }
+
+            @Override
+            public Object build() {
+                // Force discovery to publish after resolve captures nodes but before it returns state.
+                if (update.getAndSet(false)) {
+                    dispatcher.setNodes(List.of(newNode));
+                }
+                return List.copyOf(registered);
+            }
+        };
+        try {
+            var stale = resolver.resolve(address, builder).result();
+            assertThat(stale.endpoint).isEqualTo(List.of(oldNode));
+            assertThat(resolver.isValid(stale)).isFalse();
+
+            registered.clear();
+            var fresh = resolver.resolve(address, builder).result();
+            assertThat(fresh.endpoint).isEqualTo(List.of(newNode));
+            assertThat(resolver.isValid(fresh)).isTrue();
+        } finally {
+            dispatcher.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
         }
     }
 

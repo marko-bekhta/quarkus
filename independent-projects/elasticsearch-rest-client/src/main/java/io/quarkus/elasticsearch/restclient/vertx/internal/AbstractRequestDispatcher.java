@@ -61,17 +61,14 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
     private final NodeDiscoveryScheduler nodeDiscoveryScheduler;
 
     /**
-     * Every node currently known to the client -- seeds plus whatever discovery last found.
-     * This is the internal source of truth (see {@link #getNodes()}); it is never filtered.
+     * Publishes all known nodes, their selector-filtered subset, and the resolver version together.
+     * Readers capture this immutable snapshot once to keep routing and validation consistent.
+     * Node health remains mutable and is managed independently of the routing snapshot.
      */
-    protected volatile List<NodeImpl> allNodes;
+    protected volatile NodeSnapshot nodeSnapshot;
 
-    /**
-     * The subset of {@link #allNodes} that this dispatcher will actually route traffic to,
-     * i.e. the result of applying the {@link NodeSelector} (see {@link #computeRoutableNodes(List)}).
-     * Recomputed only when the node set changes, so request-time routing reads a ready-made list.
-     */
-    protected volatile List<NodeImpl> routableNodes;
+    protected record NodeSnapshot(List<NodeImpl> allNodes, List<NodeImpl> routableNodes, long version) {
+    }
 
     /**
      * The HTTP client requests are sent through. Built once during construction by the
@@ -143,12 +140,8 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
         this.nanoTimeSupplier = nanoTimeSupplier;
         this.backoffStrategy = backoffStrategy != null ? backoffStrategy : BackoffStrategy.DEFAULT;
         // Seed the node set through the same selection logic used by discovery updates.
-        // We compute the routable subset inline rather than calling setNodes(): setNodes()
-        // fires onNodesUpdated(), which subclasses override to touch state that is not yet
-        // initialized while the superclass constructor runs.
         List<NodeImpl> initial = initialNodes != null ? List.copyOf(initialNodes) : List.of();
-        this.allNodes = initial;
-        this.routableNodes = computeRoutableNodes(initial);
+        this.nodeSnapshot = new NodeSnapshot(initial, computeRoutableNodes(initial), 0);
         this.nodeDiscoveryScheduler = nodeDiscoveryConfigurer != null
                 ? nodeDiscoveryConfigurer.createScheduler(client, vertx, this::setNodes, scheme,
                         this::dispatchForDiscovery)
@@ -215,30 +208,21 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
     }
 
     /**
-     * Replaces the entire node set, typically from a node-discovery round. Discovery is a
-     * single writer that publishes the whole list at once, so this swaps both the raw and the
-     * routable snapshots wholesale rather than diffing.
-     * <p>
-     * The incoming nodes are marked alive (a freshly discovered node has no reason to be
-     * considered dead), the routable subset is recomputed via {@link #computeRoutableNodes(List)},
-     * and {@link #onNodesUpdated()} notifies subclasses. The two snapshots are {@code volatile},
-     * so concurrent readers in {@link #dispatch(Request)} always observe a fully
-     * built list -- never a half-updated one.
+     * Replaces the entire node set from a discovery round. The scheduler serializes updates on
+     * its owning context; tests may call this directly when no concurrent writer is active.
+     * Incoming nodes are marked alive, and the selector-filtered subset and resolver version
+     * are published together. Request-time readers never need to acquire a lock.
      */
     void setNodes(List<NodeImpl> nodes) {
         Objects.requireNonNull(nodes, "nodes");
         if (nodes.isEmpty()) {
             throw new IllegalArgumentException("nodes must not be empty");
         }
-        synchronized (this) {
-            List<NodeImpl> snapshot = List.copyOf(nodes);
-            for (NodeImpl node : snapshot) {
-                node.markAlive();
-            }
-            this.allNodes = snapshot;
-            this.routableNodes = computeRoutableNodes(snapshot);
-            onNodesUpdated();
+        List<NodeImpl> all = List.copyOf(nodes);
+        for (NodeImpl node : all) {
+            node.markAlive();
         }
+        nodeSnapshot = new NodeSnapshot(all, computeRoutableNodes(all), nodeSnapshot.version() + 1);
     }
 
     /**
@@ -286,6 +270,7 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
      * out. Shared by both dispatchers so the message stays consistent.
      */
     protected IOException noRoutableNodesException() {
+        List<NodeImpl> allNodes = nodeSnapshot.allNodes();
         if (allNodes.isEmpty()) {
             return new IOException("No nodes are configured");
         }
@@ -293,18 +278,10 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
                 + "] filtered out all " + allNodes.size() + " configured node(s)");
     }
 
-    /**
-     * Hook called inside the synchronized block of {@link #setNodes(List)} after nodes
-     * have been updated. Subclasses may override to perform additional bookkeeping.
-     */
-    protected void onNodesUpdated() {
-        // no-op by default
-    }
-
     // Package-private accessor so unit tests can inspect the stored node set.
     // Not part of any public contract -- the node list is internal routing state.
     List<? extends Node> getNodes() {
-        return allNodes;
+        return nodeSnapshot.allNodes();
     }
 
     @Override
