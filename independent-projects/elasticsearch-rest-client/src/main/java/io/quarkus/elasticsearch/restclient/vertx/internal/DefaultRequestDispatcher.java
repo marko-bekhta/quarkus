@@ -40,55 +40,17 @@ public class DefaultRequestDispatcher extends AbstractRequestDispatcher {
      */
     private final AtomicInteger roundRobinCounter = new AtomicInteger(0);
 
-    // Test-only: convenience for unit tests that don't need initial nodes or node discovery.
-    public DefaultRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler) {
-        super(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler);
-    }
-
-    // Test-only: injects a deterministic clock for dead-node timing assertions.
-    public DefaultRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler,
-            Supplier<Long> nanoTimeSupplier) {
-        super(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler, nanoTimeSupplier);
-    }
-
-    // Test-only: injects a deterministic clock and backoff strategy for dead-node timing assertions.
-    public DefaultRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler,
-            Supplier<Long> nanoTimeSupplier, BackoffStrategy backoffStrategy) {
-        super(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler, nanoTimeSupplier, backoffStrategy);
-    }
-
-    // Test-only: builds a plain HttpClient from the given Vert.x instance for embedded-server tests.
-    public DefaultRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler, Vertx vertx) {
-        super(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler);
-        // The test-only super constructor takes no Vertx and so leaves httpClient null; build
-        // the client here instead.
-        this.vertx = vertx;
-        this.httpClient = createHttpClient(vertx, null, null);
-    }
-
     public DefaultRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
             Map<String, String> defaultHeaders, String pathPrefix,
             boolean compressionEnabled, WarningsHandler defaultWarningsHandler,
             List<NodeImpl> initialNodes, NodeDiscoveryConfigurer nodeDiscoveryConfigurer,
             VertxElasticsearchClient client, HttpConstants.Scheme scheme,
             Vertx vertx, HttpClientOptions httpClientOptions, PoolOptions poolOptions,
-            BackoffStrategy backoffStrategy) {
+            BackoffStrategy backoffStrategy, Supplier<Long> nanoTimeSupplier) {
         super(nodeSelector, failureListener, defaultHeaders, pathPrefix,
                 compressionEnabled, defaultWarningsHandler,
                 initialNodes, nodeDiscoveryConfigurer, client, scheme, vertx,
-                httpClientOptions, poolOptions, backoffStrategy);
+                httpClientOptions, poolOptions, backoffStrategy, nanoTimeSupplier);
     }
 
     @Override

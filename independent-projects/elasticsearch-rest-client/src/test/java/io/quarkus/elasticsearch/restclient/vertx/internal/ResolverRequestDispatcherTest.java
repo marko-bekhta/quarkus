@@ -297,7 +297,7 @@ class ResolverRequestDispatcherTest {
             resp.setStatusCode(200).end();
         });
         try {
-            ResolverRequestDispatcher dispatcher = new ResolverRequestDispatcher(
+            ResolverRequestDispatcher dispatcher = RequestDispatchers.resolverDispatcher(
                     NodeSelector.any(), FailureListener.NO_OP,
                     Map.of(), "/prefix", false, WarningsHandler.PERMISSIVE,
                     vertx);
@@ -319,7 +319,7 @@ class ResolverRequestDispatcherTest {
             resp.setStatusCode(200).end();
         });
         try {
-            ResolverRequestDispatcher dispatcher = new ResolverRequestDispatcher(
+            ResolverRequestDispatcher dispatcher = RequestDispatchers.resolverDispatcher(
                     NodeSelector.any(), FailureListener.NO_OP,
                     Map.of("Authorization", "Basic default"),
                     null, false, WarningsHandler.PERMISSIVE,
@@ -344,7 +344,7 @@ class ResolverRequestDispatcherTest {
             resp.setStatusCode(200).end();
         });
         try {
-            ResolverRequestDispatcher dispatcher = new ResolverRequestDispatcher(
+            ResolverRequestDispatcher dispatcher = RequestDispatchers.resolverDispatcher(
                     NodeSelector.any(), FailureListener.NO_OP,
                     Map.of(), null, true, WarningsHandler.PERMISSIVE,
                     vertx);
@@ -387,7 +387,7 @@ class ResolverRequestDispatcherTest {
         HttpServer server1 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end());
         HttpServer server2 = startServer(vertx, (req, resp) -> resp.setStatusCode(200).end());
         try {
-            ResolverRequestDispatcher dispatcher = new ResolverRequestDispatcher(
+            ResolverRequestDispatcher dispatcher = RequestDispatchers.resolverDispatcher(
                     NodeSelector.any(), node -> failureCount.incrementAndGet(),
                     Map.of(), null, false, WarningsHandler.PERMISSIVE,
                     vertx);
@@ -449,7 +449,7 @@ class ResolverRequestDispatcherTest {
     }
 
     private static ResolverRequestDispatcher createDispatcher() {
-        return new ResolverRequestDispatcher(
+        return RequestDispatchers.resolverDispatcher(
                 NodeSelector.any(), FailureListener.NO_OP,
                 Map.of(), null, false, WarningsHandler.PERMISSIVE,
                 vertx);

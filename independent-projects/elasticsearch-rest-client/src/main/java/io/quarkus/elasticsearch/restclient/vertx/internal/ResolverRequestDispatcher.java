@@ -60,24 +60,9 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
         super(nodeSelector, failureListener, defaultHeaders, pathPrefix,
                 compressionEnabled, defaultWarningsHandler,
                 initialNodes, nodeDiscoveryConfigurer, client, scheme, vertx,
-                httpClientOptions, poolOptions, backoffStrategy);
+                httpClientOptions, poolOptions, backoffStrategy, System::nanoTime);
         this.scheme = scheme;
         this.defaultWarningsHandler = defaultWarningsHandler != null ? defaultWarningsHandler : WarningsHandler.PERMISSIVE;
-    }
-
-    // Test-only: creates a resolver-backed HttpClient using the provided Vert.x instance.
-    public ResolverRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler,
-            Vertx vertx) {
-        super(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler);
-        this.scheme = HttpConstants.Scheme.HTTP;
-        this.defaultWarningsHandler = defaultWarningsHandler != null ? defaultWarningsHandler : WarningsHandler.PERMISSIVE;
-        // The test-only super constructor takes no Vertx and so leaves httpClient null; build
-        // the resolver-backed client here instead.
-        this.vertx = vertx;
-        this.httpClient = createHttpClient(vertx, null, null);
     }
 
     @Override

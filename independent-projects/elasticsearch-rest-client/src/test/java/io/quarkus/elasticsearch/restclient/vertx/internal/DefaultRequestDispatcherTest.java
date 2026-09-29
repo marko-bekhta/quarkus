@@ -214,7 +214,7 @@ class DefaultRequestDispatcherTest {
             resp.setStatusCode(200).end();
         });
         try {
-            DefaultRequestDispatcher dispatcher = new DefaultRequestDispatcher(
+            DefaultRequestDispatcher dispatcher = RequestDispatchers.defaultDispatcher(
                     NodeSelector.any(), FailureListener.NO_OP,
                     Map.of("Authorization", "Basic default"),
                     null, false, WarningsHandler.PERMISSIVE, vertx);
@@ -238,7 +238,7 @@ class DefaultRequestDispatcherTest {
             resp.setStatusCode(200).end();
         });
         try {
-            DefaultRequestDispatcher dispatcher = new DefaultRequestDispatcher(
+            DefaultRequestDispatcher dispatcher = RequestDispatchers.defaultDispatcher(
                     NodeSelector.any(), FailureListener.NO_OP,
                     Map.of(), "/prefix", false, WarningsHandler.PERMISSIVE, vertx);
             dispatcher.setNodes(List.of(new NodeImpl(URI.create("http://localhost:" + server.actualPort()))));
@@ -253,7 +253,7 @@ class DefaultRequestDispatcherTest {
 
     @Test
     void pathPrefixRejectsTrailingSlash() {
-        assertThatThrownBy(() -> new DefaultRequestDispatcher(
+        assertThatThrownBy(() -> RequestDispatchers.defaultDispatcher(
                 NodeSelector.any(), FailureListener.NO_OP,
                 Map.of(), "/prefix/", false, WarningsHandler.PERMISSIVE))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -262,7 +262,7 @@ class DefaultRequestDispatcherTest {
 
     @Test
     void pathPrefixRejectsMissingLeadingSlash() {
-        assertThatThrownBy(() -> new DefaultRequestDispatcher(
+        assertThatThrownBy(() -> RequestDispatchers.defaultDispatcher(
                 NodeSelector.any(), FailureListener.NO_OP,
                 Map.of(), "prefix", false, WarningsHandler.PERMISSIVE))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -300,7 +300,7 @@ class DefaultRequestDispatcherTest {
             resp.setStatusCode(200).end();
         });
         try {
-            DefaultRequestDispatcher dispatcher = new DefaultRequestDispatcher(
+            DefaultRequestDispatcher dispatcher = RequestDispatchers.defaultDispatcher(
                     NodeSelector.any(), FailureListener.NO_OP,
                     Map.of(), null, true, WarningsHandler.PERMISSIVE, vertx);
             dispatcher.setNodes(List.of(new NodeImpl(URI.create("http://localhost:" + server.actualPort()))));
@@ -319,7 +319,7 @@ class DefaultRequestDispatcherTest {
         HttpServer server1 = startServer(vertx, (req, resp) -> resp.setStatusCode(503).end());
         HttpServer server2 = startServer(vertx, (req, resp) -> resp.setStatusCode(200).end());
         try {
-            DefaultRequestDispatcher dispatcher = new DefaultRequestDispatcher(
+            DefaultRequestDispatcher dispatcher = RequestDispatchers.defaultDispatcher(
                     NodeSelector.any(), node -> failureCount.incrementAndGet(),
                     Map.of(), null, false, WarningsHandler.PERMISSIVE, vertx);
             dispatcher.setNodes(List.of(
@@ -440,7 +440,7 @@ class DefaultRequestDispatcherTest {
     }
 
     private static DefaultRequestDispatcher createDispatcher() {
-        return new DefaultRequestDispatcher(
+        return RequestDispatchers.defaultDispatcher(
                 NodeSelector.any(), FailureListener.NO_OP,
                 Map.of(), null, false, WarningsHandler.PERMISSIVE, vertx);
     }

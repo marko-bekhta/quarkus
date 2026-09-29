@@ -146,9 +146,9 @@ class RequestCancellationTest {
 
     private AbstractRequestDispatcher dispatcher(boolean resolver, HttpServer server) {
         AbstractRequestDispatcher dispatcher = resolver
-                ? new ResolverRequestDispatcher(NodeSelector.any(), FailureListener.NO_OP, Map.of(), null,
+                ? RequestDispatchers.resolverDispatcher(NodeSelector.any(), FailureListener.NO_OP, Map.of(), null,
                         false, WarningsHandler.PERMISSIVE, vertx)
-                : new DefaultRequestDispatcher(NodeSelector.any(), FailureListener.NO_OP, Map.of(), null,
+                : RequestDispatchers.defaultDispatcher(NodeSelector.any(), FailureListener.NO_OP, Map.of(), null,
                         false, WarningsHandler.PERMISSIVE, vertx);
         // Leave another candidate available so an unwanted retry would be observable.
         dispatcher.setNodes(List.of(new NodeImpl(URI.create("http://localhost:" + server.actualPort())),

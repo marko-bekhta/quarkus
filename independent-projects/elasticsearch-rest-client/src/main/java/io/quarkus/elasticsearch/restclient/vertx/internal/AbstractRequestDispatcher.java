@@ -73,38 +73,11 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
     /**
      * The HTTP client requests are sent through. Built once during construction by the
      * subclass's {@link #createHttpClient(Vertx, HttpClientOptions, PoolOptions)} and owned
-     * by this base class, which closes it in {@link #close()}. {@code null} for the test-only
-     * constructors that pass no {@link Vertx}.
+     * by this base class, which closes it in {@link #close()}. {@code null} when no {@link Vertx}
+     * is supplied.
      */
     protected HttpClient httpClient;
-    protected Vertx vertx;
-
-    // Test-only: convenience for unit tests that don't need initial nodes or node discovery.
-    AbstractRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler) {
-        this(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler, System::nanoTime);
-    }
-
-    // Test-only: injects a deterministic clock for dead-node timing assertions.
-    AbstractRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler,
-            Supplier<Long> nanoTimeSupplier) {
-        this(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler, nanoTimeSupplier, (BackoffStrategy) null);
-    }
-
-    // Test-only: injects a deterministic clock and backoff strategy for dead-node timing assertions.
-    AbstractRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler,
-            Supplier<Long> nanoTimeSupplier, BackoffStrategy backoffStrategy) {
-        this(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler, nanoTimeSupplier, backoffStrategy,
-                null, null, null, null, null, null, null);
-    }
+    protected final Vertx vertx;
 
     AbstractRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
             Map<String, String> defaultHeaders, String pathPrefix,
@@ -112,20 +85,7 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
             List<NodeImpl> initialNodes, NodeDiscoveryConfigurer nodeDiscoveryConfigurer,
             VertxElasticsearchClient client, HttpConstants.Scheme scheme,
             Vertx vertx, HttpClientOptions httpClientOptions, PoolOptions poolOptions,
-            BackoffStrategy backoffStrategy) {
-        this(nodeSelector, failureListener, defaultHeaders, pathPrefix,
-                compressionEnabled, defaultWarningsHandler, System::nanoTime, backoffStrategy,
-                initialNodes, nodeDiscoveryConfigurer, client, scheme, vertx,
-                httpClientOptions, poolOptions);
-    }
-
-    private AbstractRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
-            Map<String, String> defaultHeaders, String pathPrefix,
-            boolean compressionEnabled, WarningsHandler defaultWarningsHandler,
-            Supplier<Long> nanoTimeSupplier, BackoffStrategy backoffStrategy,
-            List<NodeImpl> initialNodes, NodeDiscoveryConfigurer nodeDiscoveryConfigurer,
-            VertxElasticsearchClient client, HttpConstants.Scheme scheme, Vertx vertx,
-            HttpClientOptions httpClientOptions, PoolOptions poolOptions) {
+            BackoffStrategy backoffStrategy, Supplier<Long> nanoTimeSupplier) {
         this.vertx = vertx;
         this.nodeSelector = nodeSelector != null ? nodeSelector : AnyNodeSelector.INSTANCE;
         this.failureListener = failureListener != null ? failureListener : FailureListener.NO_OP;
@@ -156,8 +116,7 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
         }
         // Build the HTTP client last: createHttpClient() runs before subclass fields are
         // initialized, so its contract forbids reading instance state (it builds purely from
-        // the arguments). The test-only constructors pass no Vertx and set the client, if any,
-        // themselves.
+        // the arguments).
         this.httpClient = vertx != null ? createHttpClient(vertx, httpClientOptions, poolOptions) : null;
     }
 

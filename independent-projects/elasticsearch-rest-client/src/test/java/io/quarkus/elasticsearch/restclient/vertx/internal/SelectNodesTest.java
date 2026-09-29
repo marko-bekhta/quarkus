@@ -268,7 +268,7 @@ class SelectNodesTest {
     private static DefaultRequestDispatcher createDispatcher(NodeSelector selector, Supplier<Long> clock) {
         // A fixed 60s backoff keeps the dead-until offsets in these tests deterministic
         // (the default strategy applies random jitter).
-        return new DefaultRequestDispatcher(selector, FailureListener.NO_OP,
+        return RequestDispatchers.defaultDispatcher(selector, FailureListener.NO_OP,
                 Map.of(), null, false, WarningsHandler.PERMISSIVE, clock,
                 BackoffStrategy.fixed(Duration.ofSeconds(60)));
     }

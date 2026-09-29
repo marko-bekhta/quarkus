@@ -15,6 +15,6 @@ class RoundRobinDispatcherFactory extends RequestDispatcherFactory {
                 pathPrefix, compressionEnabled, warningsHandler,
                 context.initialNodes(), context.nodeDiscoveryConfigurer(),
                 context.client(), context.scheme(), context.vertx(),
-                context.httpClientOptions(), context.poolOptions(), backoffStrategy);
+                context.httpClientOptions(), context.poolOptions(), backoffStrategy, System::nanoTime);
     }
 }
