@@ -1,15 +1,18 @@
 package io.quarkus.elasticsearch.restclient.vertx;
 
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Completable;
+import io.vertx.core.Context;
 import io.vertx.core.Expectation;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpClientRequest;
 
 /**
@@ -21,37 +24,81 @@ import io.vertx.core.http.HttpClientRequest;
  */
 public final class CancellableFuture<T> implements Future<T> {
 
-    private final Future<T> delegate;
-    private final AtomicBoolean cancelled = new AtomicBoolean(false);
-    private final AtomicReference<HttpClientRequest> currentRequest = new AtomicReference<>();
+    private enum State {
+        ACTIVE,
+        CANCELLED,
+        COMPLETED
+    }
 
-    public CancellableFuture(Future<T> delegate) {
-        this.delegate = delegate;
+    private final Future<T> delegate;
+    private final Promise<T> result = Promise.promise();
+    private final Context context;
+    private final AtomicReference<State> state = new AtomicReference<>(State.ACTIVE);
+    // Accessed only on the operation's context, including when cancellation resets it.
+    private HttpClientRequest currentRequest;
+
+    public CancellableFuture(Future<T> operation, Context context) {
+        this.context = context;
+        this.delegate = result.future();
+        operation.onComplete(outcome -> runOnContext(() -> {
+            if (state.compareAndSet(State.ACTIVE, State.COMPLETED)) {
+                currentRequest = null;
+                result.handle(outcome);
+            }
+        }));
     }
 
     /**
-     * Cancels the in-flight request and prevents retries. If the request has already
-     * completed, this is a no-op and returns {@code false}.
+     * Requests cancellation on the context that owns the HTTP operation. If the operation
+     * has already completed, this is a no-op and returns {@code false}.
+     * <p>
+     * A successful call reserves a cancelled outcome immediately. Resetting the current
+     * HTTP request and completing this future with {@link CancellationException} happen
+     * on the owning context, without waiting for connection acquisition to finish.
+     * Sending already in progress may reach the server before cancellation is processed.
      *
-     * @return {@code true} if cancellation was newly set by this call
+     * @return {@code true} if this call newly accepted cancellation
      */
     public boolean cancel() {
-        if (!cancelled.compareAndSet(false, true)) {
+        if (!state.compareAndSet(State.ACTIVE, State.CANCELLED)) {
             return false;
         }
-        HttpClientRequest req = currentRequest.get();
-        if (req != null) {
-            req.reset();
-        }
+        runOnContext(() -> {
+            HttpClientRequest request = currentRequest;
+            currentRequest = null;
+            result.tryFail(new CancellationException());
+            if (request != null) {
+                request.reset();
+            }
+        });
         return true;
     }
 
     public boolean isCancelled() {
-        return cancelled.get();
+        return state.get() == State.CANCELLED;
     }
 
-    public void setCurrentRequest(HttpClientRequest request) {
-        currentRequest.set(request);
+    /**
+     * Registers a newly acquired request on the owning context, immediately before sending.
+     * A request acquired after cancellation is reset and must not be sent.
+     *
+     * @return whether the dispatcher may send the request
+     */
+    public boolean setCurrentRequest(HttpClientRequest request) {
+        if (isCancelled()) {
+            request.reset();
+            return false;
+        }
+        currentRequest = request;
+        return true;
+    }
+
+    private void runOnContext(Runnable action) {
+        if (Vertx.currentContext() == context) {
+            action.run();
+        } else {
+            context.runOnContext(ignored -> action.run());
+        }
     }
 
     // --- Future<T> delegation ---

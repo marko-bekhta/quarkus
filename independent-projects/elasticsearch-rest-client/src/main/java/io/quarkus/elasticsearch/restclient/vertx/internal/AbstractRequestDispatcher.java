@@ -80,6 +80,7 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
      * constructors that pass no {@link Vertx}.
      */
     protected HttpClient httpClient;
+    protected Vertx vertx;
 
     // Test-only: convenience for unit tests that don't need initial nodes or node discovery.
     AbstractRequestDispatcher(NodeSelector nodeSelector, FailureListener failureListener,
@@ -128,6 +129,7 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
             List<NodeImpl> initialNodes, NodeDiscoveryConfigurer nodeDiscoveryConfigurer,
             VertxElasticsearchClient client, HttpConstants.Scheme scheme, Vertx vertx,
             HttpClientOptions httpClientOptions, PoolOptions poolOptions) {
+        this.vertx = vertx;
         this.nodeSelector = nodeSelector != null ? nodeSelector : AnyNodeSelector.INSTANCE;
         this.failureListener = failureListener != null ? failureListener : FailureListener.NO_OP;
         this.defaultHeaders = defaultHeaders != null ? Map.copyOf(defaultHeaders) : Map.of();
@@ -380,7 +382,9 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
 
         return httpClient.request(options)
                 .compose(httpRequest -> {
-                    cancellable.setCurrentRequest(httpRequest);
+                    if (!cancellable.setCurrentRequest(httpRequest)) {
+                        return Future.failedFuture(new CancellationException());
+                    }
                     applyHeaders(httpRequest, request);
                     if (request.getBody() != null) {
                         return httpRequest.send(request.getBody());
@@ -428,6 +432,9 @@ abstract class AbstractRequestDispatcher implements RequestDispatcher {
                         return Future.failedFuture(new ResponseException(response));
                     }
                 }, failure -> {
+                    if (cancellable.isCancelled()) {
+                        return Future.failedFuture(new CancellationException());
+                    }
                     markDead(node);
                     IOException ex;
                     if (failure instanceof IOException) {

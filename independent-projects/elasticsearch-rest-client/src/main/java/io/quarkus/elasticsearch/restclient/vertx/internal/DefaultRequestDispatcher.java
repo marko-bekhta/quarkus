@@ -17,6 +17,7 @@ import io.quarkus.elasticsearch.restclient.vertx.Response;
 import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient;
 import io.quarkus.elasticsearch.restclient.vertx.WarningsHandler;
 import io.quarkus.elasticsearch.restclient.vertx.discovery.NodeDiscoveryConfigurer;
+import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -73,6 +74,7 @@ public class DefaultRequestDispatcher extends AbstractRequestDispatcher {
                 compressionEnabled, defaultWarningsHandler);
         // The test-only super constructor takes no Vertx and so leaves httpClient null; build
         // the client here instead.
+        this.vertx = vertx;
         this.httpClient = createHttpClient(vertx, null, null);
     }
 
@@ -110,18 +112,18 @@ public class DefaultRequestDispatcher extends AbstractRequestDispatcher {
 
     private CancellableFuture<Response> dispatch(Request request, List<NodeImpl> nodes) {
         Promise<Response> promise = Promise.promise();
-        CancellableFuture<Response> cancellable = new CancellableFuture<>(promise.future());
+        Context context = vertx.getOrCreateContext();
+        CancellableFuture<Response> cancellable = new CancellableFuture<>(promise.future(), context);
 
-        List<NodeImpl> candidates;
-        try {
-            candidates = selectNodes(nodes);
-        } catch (IOException e) {
-            promise.fail(e);
-            return cancellable;
-        }
-        Iterator<NodeImpl> nodeIterator = candidates.iterator();
-        tryNode(request, nodeIterator, null, cancellable)
-                .onComplete(promise);
+        // HttpClient captures the current context for acquisition, response and retry callbacks.
+        context.runOnContext(ignored -> {
+            try {
+                Iterator<NodeImpl> nodeIterator = selectNodes(nodes).iterator();
+                tryNode(request, nodeIterator, null, cancellable).onComplete(promise);
+            } catch (Exception e) {
+                promise.tryFail(e);
+            }
+        });
         return cancellable;
     }
 

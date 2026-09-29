@@ -18,6 +18,7 @@ import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient;
 import io.quarkus.elasticsearch.restclient.vertx.WarningFailureException;
 import io.quarkus.elasticsearch.restclient.vertx.WarningsHandler;
 import io.quarkus.elasticsearch.restclient.vertx.discovery.NodeDiscoveryConfigurer;
+import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -77,6 +78,7 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
         this.defaultWarningsHandler = defaultWarningsHandler != null ? defaultWarningsHandler : WarningsHandler.PERMISSIVE;
         // The test-only super constructor takes no Vertx and so leaves httpClient null; build
         // the resolver-backed client here instead.
+        this.vertx = vertx;
         this.httpClient = createHttpClient(vertx, null, null);
     }
 
@@ -112,17 +114,22 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
 
     private CancellableFuture<Response> dispatch(Request request, ElasticsearchAddress address) {
         Promise<Response> promise = Promise.promise();
-        CancellableFuture<Response> cancellable = new CancellableFuture<>(promise.future());
+        Context context = vertx.getOrCreateContext();
+        CancellableFuture<Response> cancellable = new CancellableFuture<>(promise.future(), context);
 
-        List<NodeImpl> currentNodes = nodesFor(address);
-        if (currentNodes.isEmpty()) {
-            promise.fail(noRoutableNodesException());
-            return cancellable;
-        }
-
-        int maxRetries = currentNodes.size();
-        sendViaResolver(request, address, null, maxRetries, cancellable)
-                .onComplete(promise);
+        // HttpClient captures the current context for acquisition, response and retry callbacks.
+        context.runOnContext(ignored -> {
+            List<NodeImpl> currentNodes = nodesFor(address);
+            if (currentNodes.isEmpty()) {
+                promise.fail(noRoutableNodesException());
+                return;
+            }
+            try {
+                sendViaResolver(request, address, null, currentNodes.size(), cancellable).onComplete(promise);
+            } catch (Exception e) {
+                promise.tryFail(e);
+            }
+        });
         return cancellable;
     }
 
@@ -158,7 +165,9 @@ public class ResolverRequestDispatcher extends AbstractRequestDispatcher {
         //     failures), so dead-node tracking could be handled entirely within the LB layer.
         return httpClient.request(options)
                 .compose(httpRequest -> {
-                    cancellable.setCurrentRequest(httpRequest);
+                    if (!cancellable.setCurrentRequest(httpRequest)) {
+                        return Future.failedFuture(new CancellationException());
+                    }
                     applyHeaders(httpRequest, request);
                     if (request.getBody() != null) {
                         return httpRequest.send(request.getBody());
