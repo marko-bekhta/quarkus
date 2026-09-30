@@ -27,6 +27,16 @@ see xref:hibernate-search-orm-elasticsearch.adoc[this dedicated guide] instead.
 :prerequisites-docker:
 include::{includes}/prerequisites.adoc[]
 
+== Elasticsearch transport migration
+
+Hibernate Search now uses a Vert.x based Elasticsearch transport. Each backend, including named backends, has its own client and retains its own hosts, credentials, timeouts, and discovery settings. Quarkus manages the shared Vert.x instance.
+
+Code that unwraps a Hibernate Search backend client must request `io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient` instead of an Apache `RestClient` or `Rest5Client`. Apache HTTP client configurers and request interceptors are not supported by this transport; migrate request customization to the Vert.x client API where possible. The Hibernate Search backend client is separate from the injectable low level and typed Elasticsearch clients.
+
+Configure the backend Vert.x client with `vertx.connect-timeout`, `vertx.read-idle-timeout`, `vertx.http1-max-pool-size`, `vertx.request-timeout`, and `vertx.discovery.*` under the backend prefix, for example `quarkus.hibernate-search-standalone.elasticsearch.vertx.http1-max-pool-size=20`. The pool size applies to each Elasticsearch server. These settings also work for named backends.
+
+The older `connection-timeout`, `read-timeout`, `max-connections-per-route`, `request-timeout`, and `discovery.*` settings remain supported as deprecated aliases. `max-connections` is also deprecated: Vert.x has no equivalent aggregate limit across all hosts. When `vertx.http1-max-pool-size` is set, it takes precedence over both older connection limits.
+
 == Architecture
 
 The application described in this guide allows to manage a (simple) library: you manage authors and their books.

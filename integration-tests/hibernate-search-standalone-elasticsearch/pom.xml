@@ -87,6 +87,29 @@
         </resources>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>ban-apache-elasticsearch-transports</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration><rules><bannedDependencies>
+                            <searchTransitive>true</searchTransitive>
+                            <excludes>
+                                <exclude>org.apache.httpcomponents:*</exclude>
+                                <exclude>org.apache.httpcomponents.client5:*</exclude>
+                                <exclude>org.apache.httpcomponents.core5:*</exclude>
+                                <exclude>org.elasticsearch.client:elasticsearch-rest*</exclude>
+                                <exclude>co.elastic.clients:elasticsearch-rest*</exclude>
+                                <exclude>org.hibernate.search:hibernate-search-backend-elasticsearch-client-rest*</exclude>
+                            </excludes>
+                            <includes><include>*:*:*:*:test</include></includes>
+                            <message>Search integration applications must use the Vert.x Elasticsearch transport.</message>
+                        </bannedDependencies></rules></configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <skip>true</skip>

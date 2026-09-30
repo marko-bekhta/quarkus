@@ -62,7 +62,7 @@ public interface ElasticsearchConfig {
     int http1MaxPoolSize();
 
     /**
-     * Timeout for establishing a connection to an Elasticsearch server.
+     * Legacy timeout for establishing a connection to an Elasticsearch server.
      *
      * @deprecated Use {@link #connectTimeout()} instead.
      */
@@ -70,7 +70,7 @@ public interface ElasticsearchConfig {
     Optional<Duration> connectionTimeout();
 
     /**
-     * Maximum time without incoming data on a connection. Zero disables the timeout.
+     * Legacy maximum time without incoming data on a connection.
      *
      * @deprecated Use {@link #readIdleTimeout()} instead.
      */
@@ -78,7 +78,7 @@ public interface ElasticsearchConfig {
     Optional<Duration> socketTimeout();
 
     /**
-     * Maximum number of pooled HTTP/1 connections per Elasticsearch server.
+     * Legacy maximum number of connections per Elasticsearch server.
      *
      * @deprecated Use {@link #http1MaxPoolSize()} instead.
      */

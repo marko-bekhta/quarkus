@@ -48,6 +48,9 @@ public class HibernateSearchElasticsearchWithElasticsearchJavaClientDevServicesT
     @Inject
     VertxElasticsearchClient client;
 
+    @Inject
+    co.elastic.clients.elasticsearch.ElasticsearchClient typedClient;
+
     @Test
     public void testDevServicesProperties() {
         assertThat(context.devServicesProperties())
@@ -60,8 +63,8 @@ public class HibernateSearchElasticsearchWithElasticsearchJavaClientDevServicesT
                 .statusCode(200)
                 .body(is("0"));
 
-        assertThat(client.performRequest(new Request("GET", "/")).getStatusCode())
-                .isEqualTo(200);
-
+        var response = client.performRequest(new Request("GET", "/"));
+        assertThat(response.getStatusCode()).isEqualTo(200);
+        assertThat(typedClient.info().version().number()).isNotBlank();
     }
 }

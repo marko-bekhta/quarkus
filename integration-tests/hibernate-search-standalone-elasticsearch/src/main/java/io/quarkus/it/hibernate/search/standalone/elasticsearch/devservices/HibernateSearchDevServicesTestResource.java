@@ -1,7 +1,5 @@
 package io.quarkus.it.hibernate.search.standalone.elasticsearch.devservices;
 
-import java.util.stream.Collectors;
-
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.GET;
@@ -10,10 +8,8 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
-import org.hibernate.search.backend.elasticsearch.ElasticsearchBackend;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.hibernate.search.mapper.pojo.standalone.mapping.SearchMapping;
-
-import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 
 @Path("/test/dev-services")
 public class HibernateSearchDevServicesTestResource {
@@ -21,14 +17,14 @@ public class HibernateSearchDevServicesTestResource {
     @Inject
     SearchMapping searchMapping;
 
+    @ConfigProperty(name = "quarkus.hibernate-search-standalone.elasticsearch.hosts")
+    String configuredHosts;
+
     @GET
     @Path("/hosts")
     @Transactional
     public String hosts() {
-        return searchMapping.backend().unwrap(ElasticsearchBackend.class).client(Rest5Client.class)
-                .getNodes().stream()
-                .map(n -> n.getHost().toHostString())
-                .collect(Collectors.joining());
+        return configuredHosts;
     }
 
     @PUT

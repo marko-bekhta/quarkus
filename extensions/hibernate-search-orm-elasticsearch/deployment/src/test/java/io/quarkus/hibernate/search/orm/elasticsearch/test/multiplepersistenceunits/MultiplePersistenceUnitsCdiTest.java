@@ -10,6 +10,7 @@ import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.UserTransaction;
 
+import org.hibernate.search.backend.elasticsearch.ElasticsearchBackend;
 import org.hibernate.search.mapper.orm.Search;
 import org.hibernate.search.mapper.orm.entity.SearchIndexedEntity;
 import org.hibernate.search.mapper.orm.mapping.SearchMapping;
@@ -18,6 +19,7 @@ import org.hibernate.search.util.common.SearchException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import io.quarkus.elasticsearch.restclient.vertx.VertxElasticsearchClient;
 import io.quarkus.hibernate.orm.PersistenceUnit;
 import io.quarkus.hibernate.search.orm.elasticsearch.test.multiplepersistenceunits.defaultpu.DefaultPUEntity;
 import io.quarkus.hibernate.search.orm.elasticsearch.test.multiplepersistenceunits.pu1.PU1Entity;
@@ -66,6 +68,18 @@ public class MultiplePersistenceUnitsCdiTest {
 
     @Inject
     UserTransaction transaction;
+
+    @Test
+    public void testPersistenceUnitsOwnSeparateElasticsearchClients() {
+        VertxElasticsearchClient defaultClient = defaultPUMapping.backend()
+                .unwrap(ElasticsearchBackend.class).client(VertxElasticsearchClient.class);
+        VertxElasticsearchClient pu1Client = pu1Mapping.backend()
+                .unwrap(ElasticsearchBackend.class).client(VertxElasticsearchClient.class);
+        VertxElasticsearchClient pu2Client = pu2Mapping.backend()
+                .unwrap(ElasticsearchBackend.class).client(VertxElasticsearchClient.class);
+        assertThat(defaultClient).isNotSameAs(pu1Client).isNotSameAs(pu2Client);
+        assertThat(pu1Client).isNotSameAs(pu2Client);
+    }
 
     @Test
     public void testDefaultMapping() {

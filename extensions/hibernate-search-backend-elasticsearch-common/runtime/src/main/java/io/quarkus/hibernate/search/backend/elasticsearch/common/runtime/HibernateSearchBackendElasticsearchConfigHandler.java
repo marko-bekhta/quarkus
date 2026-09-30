@@ -16,12 +16,14 @@ import org.hibernate.search.backend.elasticsearch.cfg.ElasticsearchBackendSettin
 import org.hibernate.search.backend.elasticsearch.cfg.ElasticsearchIndexSettings;
 import org.hibernate.search.backend.elasticsearch.index.layout.IndexLayoutStrategy;
 import org.hibernate.search.engine.cfg.BackendSettings;
+import org.hibernate.search.engine.environment.bean.BeanReference;
 
 import io.quarkus.hibernate.search.backend.elasticsearch.common.runtime.HibernateSearchBackendElasticsearchBuildTimeConfig.IndexConfig;
 
 public final class HibernateSearchBackendElasticsearchConfigHandler {
 
-    private static final String DEFAULT_ES_CLIENT = "elasticsearch-rest5";
+    private static final BeanReference<VertxElasticsearchClientFactory> DEFAULT_ES_CLIENT = BeanReference
+            .ofInstance(new VertxElasticsearchClientFactory());
 
     public static void contributeBackendBuildTimeProperties(BiConsumer<String, Object> propertyCollector,
             MapperContext mapperContext,
@@ -127,29 +129,36 @@ public final class HibernateSearchBackendElasticsearchConfigHandler {
                     elasticsearchBackendConfig.username());
             addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.PASSWORD,
                     elasticsearchBackendConfig.password());
-            addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.CONNECTION_TIMEOUT,
-                    elasticsearchBackendConfig.connectionTimeout().toMillis());
-            addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.READ_TIMEOUT,
-                    elasticsearchBackendConfig.readTimeout().toMillis());
-            addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.REQUEST_TIMEOUT,
-                    elasticsearchBackendConfig.requestTimeout(), Optional::isPresent, d -> d.get().toMillis());
-            addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.MAX_CONNECTIONS,
-                    elasticsearchBackendConfig.maxConnections());
-            addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.MAX_CONNECTIONS_PER_ROUTE,
-                    elasticsearchBackendConfig.maxConnectionsPerRoute());
+            // Translate legacy backend properties to the Vert.x client's own settings.
+            addBackendConfig(propertyCollector, backendName, VertxElasticsearchBackendClientSettings.CONNECT_TIMEOUT,
+                    elasticsearchBackendConfig.vertx().connectTimeout()
+                            .orElseGet(elasticsearchBackendConfig::connectionTimeout).toMillis());
+            addBackendConfig(propertyCollector, backendName, VertxElasticsearchBackendClientSettings.READ_IDLE_TIMEOUT,
+                    elasticsearchBackendConfig.vertx().readIdleTimeout()
+                            .orElseGet(elasticsearchBackendConfig::readTimeout).toMillis());
+            addBackendConfig(propertyCollector, backendName, VertxElasticsearchBackendClientSettings.REQUEST_TIMEOUT,
+                    elasticsearchBackendConfig.vertx().requestTimeout().or(elasticsearchBackendConfig::requestTimeout),
+                    Optional::isPresent, d -> d.get().toMillis());
+            addBackendConfig(propertyCollector, backendName, VertxElasticsearchBackendClientSettings.HTTP1_MAX_POOL_SIZE,
+                    elasticsearchBackendConfig.vertx().http1MaxPoolSize()
+                            .orElseGet(() -> Math.min(elasticsearchBackendConfig.maxConnectionsPerRoute(),
+                                    elasticsearchBackendConfig.maxConnections())));
+            boolean discoveryEnabled = elasticsearchBackendConfig.vertx().discovery().enabled()
+                    .orElseGet(() -> elasticsearchBackendConfig.discovery().enabled());
+            addBackendConfig(propertyCollector, backendName, VertxElasticsearchBackendClientSettings.DISCOVERY_ENABLED,
+                    discoveryEnabled);
+            if (discoveryEnabled) {
+                addBackendConfig(propertyCollector, backendName,
+                        VertxElasticsearchBackendClientSettings.DISCOVERY_REFRESH_INTERVAL,
+                        elasticsearchBackendConfig.vertx().discovery().refreshInterval()
+                                .orElseGet(() -> elasticsearchBackendConfig.discovery().refreshInterval()).getSeconds());
+            }
             addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.THREAD_POOL_SIZE,
                     elasticsearchBackendConfig.threadPool().size());
             addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.VERSION_CHECK_ENABLED,
                     elasticsearchBackendConfig.versionCheck().enabled());
             addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.QUERY_SHARD_FAILURE_IGNORE,
                     elasticsearchBackendConfig.query().shardFailure().ignore());
-
-            addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.DISCOVERY_ENABLED,
-                    elasticsearchBackendConfig.discovery().enabled());
-            if (elasticsearchBackendConfig.discovery().enabled()) {
-                addBackendConfig(propertyCollector, backendName, ElasticsearchBackendSettings.DISCOVERY_REFRESH_INTERVAL,
-                        elasticsearchBackendConfig.discovery().refreshInterval().getSeconds());
-            }
         }
 
         // Settings that may default to a @SearchExtension-annotated-bean

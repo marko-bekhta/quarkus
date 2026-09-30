@@ -45,13 +45,19 @@ public interface HibernateSearchBackendElasticsearchRuntimeConfig {
 
     /**
      * The timeout when establishing a connection to an Elasticsearch server.
+     *
+     * @deprecated Use {@code vertx.connect-timeout} instead.
      */
+    @Deprecated(since = "4.0")
     @WithDefault("1S")
     Duration connectionTimeout();
 
     /**
      * The timeout when reading responses from an Elasticsearch server.
+     *
+     * @deprecated Use {@code vertx.read-idle-timeout} instead.
      */
+    @Deprecated(since = "4.0")
     @WithDefault("30S")
     Duration readTimeout();
 
@@ -62,24 +68,69 @@ public interface HibernateSearchBackendElasticsearchRuntimeConfig {
      * send the request and read the response.
      *
      * @asciidoclet
+     * @deprecated Use {@code vertx.request-timeout} instead.
      */
+    @Deprecated(since = "4.0")
     Optional<Duration> requestTimeout();
 
     /**
-     * The maximum number of connections to all the Elasticsearch servers.
+     * Legacy maximum number of connections to all the Elasticsearch servers.
+     * The Vert.x transport applies this as a per-server upper bound together with
+     * {@code max-connections-per-route}; it does not support an aggregate limit.
+     *
+     * @deprecated Vert.x has no aggregate connection limit; use {@code vertx.http1-max-pool-size} for each server.
      */
+    @Deprecated(since = "4.0")
     @WithDefault("40")
     int maxConnections();
 
     /**
      * The maximum number of connections per Elasticsearch server.
+     *
+     * @deprecated Use {@code vertx.http1-max-pool-size} instead.
      */
+    @Deprecated(since = "4.0")
     @WithDefault("20")
     int maxConnectionsPerRoute();
 
     /**
-     * Configuration for the automatic discovery of new Elasticsearch nodes.
+     * Configuration specific to the Vert.x Elasticsearch client.
      */
+    VertxConfig vertx();
+
+    @ConfigGroup
+    interface VertxConfig {
+        /** Timeout when establishing a connection to an Elasticsearch server. */
+        Optional<Duration> connectTimeout();
+
+        /** Timeout of inactivity while reading an Elasticsearch response. */
+        Optional<Duration> readIdleTimeout();
+
+        /** Maximum size of the HTTP/1 connection pool for each Elasticsearch server. */
+        OptionalInt http1MaxPoolSize();
+
+        /** Timeout when executing an Elasticsearch request. */
+        Optional<Duration> requestTimeout();
+
+        /** Configuration for automatic node discovery. */
+        VertxDiscoveryConfig discovery();
+    }
+
+    @ConfigGroup
+    interface VertxDiscoveryConfig {
+        /** Whether automatic node discovery is enabled. */
+        Optional<Boolean> enabled();
+
+        /** Interval between node discovery attempts. */
+        Optional<Duration> refreshInterval();
+    }
+
+    /**
+     * Configuration for the automatic discovery of new Elasticsearch nodes.
+     *
+     * @deprecated Use {@code vertx.discovery} instead.
+     */
+    @Deprecated(since = "4.0")
     DiscoveryConfig discovery();
 
     /**
@@ -175,18 +226,28 @@ public interface HibernateSearchBackendElasticsearchRuntimeConfig {
         IndexingConfig indexing();
     }
 
+    /**
+     * @deprecated Use {@link VertxDiscoveryConfig} instead.
+     */
     @ConfigGroup
+    @Deprecated(since = "4.0")
     interface DiscoveryConfig {
 
         /**
          * Defines if automatic discovery is enabled.
+         *
+         * @deprecated Use {@code vertx.discovery.enabled} instead.
          */
+        @Deprecated(since = "4.0")
         @WithDefault("false")
         Boolean enabled();
 
         /**
          * Refresh interval of the node list.
+         *
+         * @deprecated Use {@code vertx.discovery.refresh-interval} instead.
          */
+        @Deprecated(since = "4.0")
         @WithDefault("10S")
         Duration refreshInterval();
 
